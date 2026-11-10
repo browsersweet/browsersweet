@@ -1,5 +1,12 @@
 import { existsSync } from 'node:fs';
-import { bridgeConfigPath, defaultPathEnv, primaryRunDir } from '../paths.js';
+import {
+  bridgeConfigPath,
+  defaultPathEnv,
+  fitsSocket,
+  MAX_SOCKET_PATH_BYTES,
+  primaryRunDir,
+  RUN_DIR_ENV,
+} from '../paths.js';
 import { packageVersion } from '../version.js';
 import {
   type BridgeConfig,
@@ -79,6 +86,14 @@ export async function runHost(args: readonly string[]): Promise<number> {
   const runDir = primaryRunDir(pe, existsSync);
   if (!runDir) {
     log('error', 'no usable socket directory');
+    return 1;
+  }
+  if (!fitsSocket(runDir, pe)) {
+    // Only an override can get here; the default candidates are filtered by length.
+    log(
+      'error',
+      `${runDir} is too long for a Unix socket path (${MAX_SOCKET_PATH_BYTES} bytes including the socket name); set ${RUN_DIR_ENV} to a shorter directory`,
+    );
     return 1;
   }
   try {

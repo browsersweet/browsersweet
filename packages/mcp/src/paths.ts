@@ -78,7 +78,8 @@ export function bridgeConfigPath(pe: PathEnv): string {
   return pathFor(pe.platform).join(bridgeDir(pe), 'config.json');
 }
 
-function fitsSocket(dir: string, pe: PathEnv): boolean {
+/** Is `dir` short enough for `<dir>/<16 hex>.sock`? (Always true on Windows: named pipes.) */
+export function fitsSocket(dir: string, pe: PathEnv): boolean {
   if (pe.platform === 'win32') return true;
   return (
     Buffer.byteLength(dir, 'utf8') + 1 + SOCKET_NAME_LENGTH <=

@@ -22,6 +22,7 @@ import type {
   HostStatusMessage,
   HostToExtensionMessage,
 } from '../protocol/native.js';
+import { fitsSocket } from '../paths.js';
 import { HostRecord } from '../protocol/socket.js';
 import {
   FakeExtension,
@@ -454,5 +455,21 @@ describe.skipIf(!posix)('socket directory permissions', () => {
     const removed = sweepStaleRecords(dir, (pid) => pid === process.pid);
     expect(removed).toEqual([path.join(dir, 'dead.json')]);
     expect(readdirSync(dir).sort()).toEqual(['live.json']);
+  });
+});
+
+describe('socket directories', () => {
+  it('rejects a run directory too long for a Unix socket', () => {
+    const pe = {
+      platform: 'darwin',
+      homedir: '/Users/me',
+      env: {},
+      tmpdir: '/tmp',
+    } as const;
+    expect(fitsSocket('/tmp/browsersweet', pe)).toBe(true);
+    expect(fitsSocket(`/tmp/${'x'.repeat(90)}`, pe)).toBe(false);
+    expect(
+      fitsSocket(`C:\\${'x'.repeat(200)}`, { ...pe, platform: 'win32' }),
+    ).toBe(true);
   });
 });
