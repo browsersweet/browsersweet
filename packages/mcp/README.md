@@ -47,15 +47,17 @@ The bridge folder holds a copy of the host runtime (so it keeps working after th
 
 ## Tools
 
-| Tool                           | What it does                                    |
-| ------------------------------ | ----------------------------------------------- |
-| `list_spaces`                  | Your Spaces with kept and open tab counts       |
-| `get_kept_tree`                | A Space's Kept folders and links, and Favorites |
-| `list_tabs` / `get_active_tab` | Open tabs and the one you're looking at         |
-| `search_archive`               | Auto-archived tabs by text and date             |
-| `get_handoffs`                 | What you sent with **Send to agent**            |
-| `get_page_text`                | Text of a tab you've granted site access to     |
-| `list_browser_profiles`        | Connected browser profiles                      |
+| Tool                           | What it does                                        |
+| ------------------------------ | --------------------------------------------------- |
+| `list_spaces`                  | Your Spaces with kept and open tab counts           |
+| `get_kept_tree`                | A Space's Kept folders and links, and Favorites     |
+| `list_tabs` / `get_active_tab` | Open tabs and the one you're looking at (see below) |
+| `search_archive`               | Auto-archived tabs by text and date                 |
+| `get_handoffs`                 | What you sent with **Send to agent**                |
+| `get_page_text`                | Text of a tab you've granted site access to         |
+| `list_browser_profiles`        | Connected browser profiles                          |
+
+`get_active_tab` returns the active tab of the browser window you used last, even while you're typing in a terminal and the browser doesn't have focus. It comes back empty only when that browser profile has no normal window open.
 
 The tool list comes from the extension, so it follows your extension version. Every tool takes an optional `profile` (an id, label or browser name from `list_browser_profiles`); without it the most recently focused browser profile answers. If no browser is connected, tools return an error telling you to turn on Labs → Agent integration.
 

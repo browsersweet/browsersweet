@@ -38,7 +38,8 @@ const FALLBACK_DESCRIPTIONS: Record<(typeof V1_READ_TOOLS)[number], string> = {
     "Read a Space's Kept tree (folders and kept links) and Favorites.",
   list_tabs:
     'List open tabs with their Space and whether they are kept, Favorites or Today tabs.',
-  get_active_tab: 'Get the tab the user is looking at.',
+  get_active_tab:
+    "Get the active tab in the user's last-focused browser window (the browser doesn't need focus).",
   search_archive: 'Search auto-archived tabs by text and date.',
   get_handoffs: 'Read what the user sent to the agent with "Send to agent".',
   get_page_text:

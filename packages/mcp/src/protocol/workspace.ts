@@ -25,7 +25,7 @@ export type SpaceInfo = z.infer<typeof SpaceInfo>;
 /** `list_spaces` → */
 export const ListSpacesData = z.object({
   spaces: z.array(SpaceInfo),
-  /** The Space shown in the focused window. */
+  /** The Space shown in the last-focused normal window. */
   activeSpaceId: Id.optional(),
 });
 
@@ -97,7 +97,11 @@ export type TabInfo = z.infer<typeof TabInfo>;
 /** `list_tabs` (input: `{ spaceId?, windowId? }`) → */
 export const ListTabsData = z.object({ tabs: z.array(TabInfo) });
 
-/** `get_active_tab` → (`tab` absent when no window has focus) */
+/**
+ * `get_active_tab` → the active tab in the focused profile's last-focused normal window, whether
+ * or not the browser has focus (agents usually run in another app). `tab` is absent only when
+ * the profile has no normal window.
+ */
 export const ActiveTabData = z.object({ tab: TabInfo.optional() });
 
 export const ArchiveEntryInfo = z.object({
