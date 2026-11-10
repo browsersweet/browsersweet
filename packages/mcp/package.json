@@ -1,11 +1,15 @@
 {
   "name": "@browsersweet/mcp",
   "version": "0.0.1",
+  "description": "Local MCP server for Browser Sweet: lets Claude Code, Claude Desktop and Cursor read your Spaces, Kept, Today, Archive and handoffs through a native messaging bridge.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "browsersweet-mcp": "./dist/cli.js"
+  },
   "exports": {
     "./package.json": "./package.json",
     ".": {
@@ -13,12 +17,29 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./protocol": {
+      "@browsersweet/source": "./src/protocol/index.ts",
+      "types": "./dist/protocol/index.d.ts",
+      "import": "./dist/protocol/index.js",
+      "default": "./dist/protocol/index.js"
     }
   },
   "files": [
     "dist",
-    "!**/*.tsbuildinfo"
+    "!**/*.tsbuildinfo",
+    "PROTOCOL.md"
   ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "browser",
+    "native-messaging",
+    "browsersweet"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "tslib": "^2.3.0",
