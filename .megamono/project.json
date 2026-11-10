@@ -1,0 +1,51 @@
+{
+  "name": "megamono",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "tags": ["type:app", "scope:shared", "platform:node", "visibility:internal"],
+  "targets": {
+    "check": {
+      "executor": "@megamono/plugin:check",
+      "cache": false,
+      "inputs": [
+        "{workspaceRoot}/megamono.json",
+        "{workspaceRoot}/.megamono/artifacts.json",
+        "{workspaceRoot}/package.json",
+        "{workspaceRoot}/package-lock.json",
+        "{workspaceRoot}/npm-shrinkwrap.json",
+        "{workspaceRoot}/pnpm-lock.yaml",
+        "{workspaceRoot}/yarn.lock",
+        "{workspaceRoot}/bun.lock",
+        "{workspaceRoot}/bun.lockb",
+        "{workspaceRoot}/pnpm-workspace.yaml",
+        "{workspaceRoot}/.npmrc",
+        "{workspaceRoot}/.yarnrc.yml",
+        "{workspaceRoot}/yalc.lock",
+        {
+          "env": "CI"
+        },
+        "{workspaceRoot}/nx.json",
+        "{workspaceRoot}/docs/**/*.md",
+        "{workspaceRoot}/**/package.json",
+        "{workspaceRoot}/.agents/skills/**/*"
+      ]
+    },
+    "import": {
+      "executor": "@megamono/plugin:import",
+      "cache": false,
+      "parallelism": false
+    },
+    "verify-runtime": {
+      "executor": "@megamono/plugin:verify-runtime",
+      "cache": false
+    },
+    "verify-dependencies": {
+      "executor": "@megamono/plugin:verify-workspace-dependencies",
+      "cache": false
+    },
+    "verify-container": {
+      "executor": "@megamono/plugin:verify-container",
+      "cache": false
+    }
+  }
+}

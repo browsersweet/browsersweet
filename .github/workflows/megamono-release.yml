@@ -1,0 +1,45 @@
+name: Megamono package prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      specifier:
+        description: Semver keyword or exact version
+        required: true
+        default: prerelease
+        type: string
+      preid:
+        description: Prerelease identifier
+        required: true
+        default: next
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    environment: npm-next
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec nx run-many -t lint test build -p browsersweet-mcp --output-style=static
+      - name: Preview version changes
+        run: pnpm exec nx release version "${{ inputs.specifier }}" --preid "${{ inputs.preid }}" --dry-run
+      - name: Version packages
+        run: pnpm exec nx release version "${{ inputs.specifier }}" --preid "${{ inputs.preid }}" --git-commit --git-tag
+      - name: Publish next prerelease
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm exec nx release publish --tag next
+      - run: git push --follow-tags origin HEAD

@@ -1,0 +1,19 @@
+# Add files here to ignore them from prettier formatting
+/dist
+/coverage
+/.nx/cache
+/.nx/workspace-data
+.nx/self-healing
+# megamono ignore entries start
+.content-collections/
+.megamono/graph.json
+.megamono/health.json
+.yalc/
+yalc.lock
+pnpm-lock.yaml
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+bun.lock
+bun.lockb
+# megamono ignore entries end

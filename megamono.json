@@ -1,0 +1,95 @@
+{
+  "$schema": "./node_modules/@megamono/plugin/schemas/megamono.schema.json",
+  "version": 1,
+  "conventions": {
+    "nestFeatureLibraries": true,
+    "docsLocation": "centralized",
+    "packageManager": "pnpm",
+    "apps": {
+      "web": {
+        "router": "pages",
+        "src": true,
+        "e2e": "playwright"
+      },
+      "api": {
+        "framework": "nest",
+        "featureLibraries": true,
+        "e2e": "jest"
+      }
+    },
+    "rules": {}
+  },
+  "scaffolding": {
+    "web": {
+      "styling": "auto"
+    }
+  },
+  "adoption": {
+    "modules": [
+      "docs",
+      "agents",
+      "ci",
+      "release",
+      "lint",
+      "skills",
+      "health",
+      "inference"
+    ],
+    "reductions": [],
+    "inference": {},
+    "ratchets": []
+  },
+  "platforms": ["node"],
+  "ports": {},
+  "topics": {
+    "extend": []
+  },
+  "docs": {
+    "root": "docs",
+    "reportRetentionDays": 84,
+    "loader": "content-collections.ts",
+    "module": "content-collections",
+    "output": ".content-collections",
+    "loaderMode": "create"
+  },
+  "health": {
+    "cadence": "weekly",
+    "stalePlanDays": 30,
+    "checks": {
+      "dependency-alignment": true,
+      "spec-drift": true,
+      "stale-plans": true,
+      "orphaned-libraries": true,
+      "integration-template-drift": true
+    },
+    "projectAliases": {},
+    "suppressions": []
+  },
+  "databases": {},
+  "services": {
+    "runner": "none",
+    "requirements": {}
+  },
+  "packageSources": {
+    "registries": {},
+    "profiles": {
+      "development": {
+        "localReferences": "allow",
+        "approved": []
+      },
+      "migration": {
+        "localReferences": "warn",
+        "approved": []
+      },
+      "ci": {
+        "localReferences": "reject",
+        "approved": []
+      },
+      "release": {
+        "localReferences": "reject",
+        "approved": []
+      }
+    },
+    "forbidLocalInCi": true
+  }
+}
