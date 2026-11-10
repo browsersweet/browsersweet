@@ -1,6 +1,7 @@
 import type { ToolArguments } from '../protocol/common.js';
 import type { HostState, McpClientInfo } from '../protocol/socket.js';
-import { isProcessAlive, readRecords } from '../host/records.js';
+import type { OwnershipCheck } from '../host/fs-security.js';
+import { isProcessAlive, readTrustedRecords } from '../host/records.js';
 import { HostConnection, type ToolCallOutcome } from './connection.js';
 
 /** A connected browser profile, as the MCP server sees it. */
@@ -36,6 +37,8 @@ export interface DiscoveryPoolOptions {
   /** Don't retry a record that failed to connect for this long. */
   readonly retryAfterMs?: number;
   readonly log?: (message: string) => void;
+  /** How run directories, records and sockets are checked (tests inject `lstat`/`uid`). */
+  readonly ownership?: OwnershipCheck;
 }
 
 /** Finds running hosts through their discovery records and keeps a connection to each. */
@@ -44,6 +47,8 @@ export class DiscoveryPool implements HostSource {
   private readonly failed = new Map<string, number>();
   /** Record files of hosts that disconnected us at the user's request. Never retried. */
   private readonly refused = new Set<string>();
+  /** Ownership problems already logged, so polling doesn't repeat them. */
+  private readonly warned = new Set<string>();
   private mcpClient: McpClientInfo | undefined;
   private readonly listeners = new Set<() => void>();
   private refreshing: Promise<void> | undefined;
@@ -125,7 +130,17 @@ export class DiscoveryPool implements HostSource {
     const seen = new Set<string>();
     const attempts: Promise<void>[] = [];
     for (const dir of this.options.dirs()) {
-      for (const { file, record } of readRecords(dir)) {
+      const { entries, dirProblem, rejected } = readTrustedRecords(
+        dir,
+        this.options.ownership,
+      );
+      if (dirProblem) {
+        this.warnOnce(`ignoring ${dir}: it ${dirProblem}`);
+      }
+      for (const { path, reason } of rejected) {
+        this.warnOnce(`ignoring ${path}: ${reason}`);
+      }
+      for (const { file, record } of entries) {
         seen.add(file);
         if (this.connections.has(file) || this.refused.has(file)) continue;
         if (!alive(record.pid)) continue;
@@ -193,6 +208,12 @@ export class DiscoveryPool implements HostSource {
       if (!seen.has(file)) this.refused.delete(file);
     }
     await Promise.all(attempts);
+  }
+
+  private warnOnce(message: string): void {
+    if (this.warned.has(message)) return;
+    this.warned.add(message);
+    this.options.log?.(message);
   }
 
   private changed(): void {

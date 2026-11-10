@@ -76,6 +76,7 @@ The tool list comes from the extension, so it follows your extension version. Ev
 ### Threat model
 
 - **The socket.** Each browser profile's host listens on a Unix socket in a directory only you can open (mode 0700; the socket is 0600), or on Windows a named pipe whose name includes your user SID and a random id. Clients must present a random token from a discovery file in that private directory before the host sends anything; on Windows this compensates for named pipes' default ACL, which lets other users open a pipe read-only.
+- **Other users can't impersonate the browser.** The fallback socket directories live in `/tmp`, where another local user could create one first. The host refuses a directory it doesn't own, and the MCP server ignores any directory, discovery file or socket that isn't yours, is a symlink, or that others can write to, so it never sends tool calls to (or takes tool descriptions from) someone else's socket. `doctor` reports such a directory as a failure.
 - **Same-user processes are trusted.** Any program running as you can read the token and connect, just as it could launch the MCP server itself or read your browser profile. That's the same trust boundary as the MCP client, and why the tools are read-only.
 - **Prompt injection** from page content is mitigated by labeling, not prevented; review what an agent proposes to do with what it read.
 

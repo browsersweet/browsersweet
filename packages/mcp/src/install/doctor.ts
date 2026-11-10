@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync } from 'node:fs';
 import { readBridgeConfig } from '../host/caller.js';
-import { isProcessAlive, readRecords } from '../host/records.js';
+import type { OwnershipCheck } from '../host/fs-security.js';
+import { isProcessAlive, readTrustedRecords } from '../host/records.js';
 import { runDirCandidates } from '../paths.js';
 import { NATIVE_HOST_NAME } from '../protocol/constants.js';
 import { DiscoveryPool } from '../client/pool.js';
@@ -35,6 +36,8 @@ export interface DoctorDeps {
   readonly mode: (path: string) => number | undefined;
   /** `reg query <key> /ve` stdout, or undefined when the key is missing. */
   readonly regQuery: (key: string) => string | undefined;
+  /** How socket directories, records and sockets are checked. Default: this process's uid. */
+  readonly ownership?: OwnershipCheck;
 }
 
 export const nodeDoctorDeps: DoctorDeps = {
@@ -252,21 +255,29 @@ export async function checkHosts(
 ): Promise<Check[]> {
   const checks: Check[] = [];
   const dirs = runDirCandidates(ctx);
+  const ownership: OwnershipCheck = deps.ownership ?? {
+    platform: ctx.platform,
+    uid: ctx.uid,
+  };
   for (const dir of dirs) {
-    if (!ctx.exists(dir)) continue;
-    const mode = deps.mode(dir);
-    if (
-      ctx.platform !== 'win32' &&
-      mode !== undefined &&
-      (mode & 0o077) !== 0
-    ) {
+    const { entries, dirProblem, rejected } = readTrustedRecords(
+      dir,
+      ownership,
+    );
+    if (dirProblem) {
       checks.push({
         level: 'fail',
-        message: `${dir} is mode ${mode.toString(8)}; expected 700`,
+        message: `${dir} ${dirProblem}. The MCP server ignores it; if you didn't create it, another user may have, so remove it.`,
+      });
+      continue;
+    }
+    for (const { path, reason } of rejected) {
+      checks.push({
+        level: 'fail',
+        message: `${path}: ${reason}. The MCP server ignores it; remove it.`,
       });
     }
-    const records = readRecords(dir);
-    const stale = records.filter((r) => !isProcessAlive(r.record.pid));
+    const stale = entries.filter((r) => !isProcessAlive(r.record.pid));
     if (stale.length) {
       checks.push({
         level: 'warn',
@@ -278,6 +289,7 @@ export async function checkHosts(
     dirs: () => dirs,
     clientName: 'browsersweet-mcp doctor',
     clientVersion,
+    ownership,
   });
   try {
     const hosts = orderByFocus(await pool.list());
