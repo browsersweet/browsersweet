@@ -15,7 +15,7 @@ It's a small MCP server that talks to the Browser Sweet extension through the br
    npx @browsersweet/mcp install --extension-id <id>
    ```
 
-   This finds Chrome, Chromium, Edge, Brave, Vivaldi, Arc and Firefox and writes a native messaging manifest for each. Use `--browser chrome` (repeatable) to pick browsers, and `--dry-run` to see exactly what would be written. For Firefox, pass its extension id too (it looks like `name@domain`).
+   This finds Chrome, Chrome for Testing, Chromium, Edge, Brave, Vivaldi, Arc and Firefox and writes a native messaging manifest for each. Use `--browser chrome` (repeatable) to pick browsers, and `--dry-run` to see exactly what would be written. For Firefox, pass its extension id too (it looks like `name@domain`).
 
 3. Add the MCP server to your client:
 
@@ -33,15 +33,17 @@ It's a small MCP server that talks to the Browser Sweet extension through the br
      }
      ```
 
-`npx @browsersweet/mcp config` prints these again. Check everything with `npx @browsersweet/mcp doctor`. Remove it all with `npx @browsersweet/mcp uninstall` (then remove the entry from your MCP client).
+`npx @browsersweet/mcp config` prints these again.
+
+**Other browser setups.** `--browser chrome-for-testing` targets the Chrome for Testing build that Puppeteer and Playwright download (its own `NativeMessagingHosts` folder; on Windows it reads Chrome's registry key). For a browser started with a custom `--user-data-dir`, or for tests, `--manifest-dir <dir>` writes the manifest into `<dir>` instead of the browsers' folders (add `--browser firefox` for a Firefox manifest). On macOS and Linux, Chromium reads per-user hosts from `<user data dir>/NativeMessagingHosts`; Windows browsers only look in the registry, so there you'd register the written file yourself. `uninstall --manifest-dir <dir>` removes just that manifest and `doctor --manifest-dir <dir>` checks it; both also take `--browser`. Check everything with `npx @browsersweet/mcp doctor`. Remove it all with `npx @browsersweet/mcp uninstall` (then remove the entry from your MCP client).
 
 ### What `install` writes
 
-|         | Manifest(s)                                                                                                                                                                                                                   | Bridge files                                         |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| macOS   | `~/Library/Application Support/<browser>/NativeMessagingHosts/com.browsersweet.bridge.json` (Chrome: `Google/Chrome`, Edge: `Microsoft Edge`, Brave: `BraveSoftware/Brave-Browser`, Arc: `Arc/User Data`, Firefox: `Mozilla`) | `~/Library/Application Support/BrowserSweet/bridge/` |
-| Linux   | `~/.config/<browser>/NativeMessagingHosts/` (`google-chrome`, `chromium`, `microsoft-edge`, `BraveSoftware/Brave-Browser`, `vivaldi`; honors `XDG_CONFIG_HOME`), Firefox: `~/.mozilla/native-messaging-hosts/`                | `~/.local/share/browsersweet/bridge/`                |
-| Windows | `%LOCALAPPDATA%\BrowserSweet\bridge\manifests\…`, registered under `HKCU\Software\<vendor>\<browser>\NativeMessagingHosts\com.browsersweet.bridge` with `reg.exe` (Brave and Vivaldi also get Chrome's key)                   | `%LOCALAPPDATA%\BrowserSweet\bridge\`                |
+|         | Manifest(s)                                                                                                                                                                                                                                                                    | Bridge files                                         |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| macOS   | `~/Library/Application Support/<browser>/NativeMessagingHosts/com.browsersweet.bridge.json` (Chrome: `Google/Chrome`, Chrome for Testing: `Google/Chrome for Testing`, Edge: `Microsoft Edge`, Brave: `BraveSoftware/Brave-Browser`, Arc: `Arc/User Data`, Firefox: `Mozilla`) | `~/Library/Application Support/BrowserSweet/bridge/` |
+| Linux   | `~/.config/<browser>/NativeMessagingHosts/` (`google-chrome`, `google-chrome-for-testing`, `chromium`, `microsoft-edge`, `BraveSoftware/Brave-Browser`, `vivaldi`; honors `XDG_CONFIG_HOME`), Firefox: `~/.mozilla/native-messaging-hosts/`                                    | `~/.local/share/browsersweet/bridge/`                |
+| Windows | `%LOCALAPPDATA%\BrowserSweet\bridge\manifests\…`, registered under `HKCU\Software\<vendor>\<browser>\NativeMessagingHosts\com.browsersweet.bridge` with `reg.exe` (Brave and Vivaldi also get Chrome's key; Chrome for Testing uses Chrome's)                                  | `%LOCALAPPDATA%\BrowserSweet\bridge\`                |
 
 The bridge folder holds a copy of the host runtime (so it keeps working after the npx cache is cleared), `config.json` (the allowed extension ids, mode 0600) and a launcher script (`browsersweet-bridge` or `.cmd`) that runs it with the absolute path of the Node that ran `install`. If you remove or upgrade that Node, run `install` again.
 

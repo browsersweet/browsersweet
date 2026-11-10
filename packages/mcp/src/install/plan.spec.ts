@@ -13,9 +13,12 @@ import { shortTempDir } from '../test-support/fake-extension.js';
 import { applyPlan, nodeApplyIo, type ApplyIo } from './apply.js';
 import { extensionIdFromKey, classifyExtensionId } from './extension-id.js';
 import { posixLauncher, shellQuote, windowsLauncher } from './launcher.js';
+import { type BrowserKey, parseBrowserKey } from './browsers.js';
+import { checkInstall, nodeDoctorDeps } from './doctor.js';
 import {
   type Action,
   type InstallContext,
+  installLayout,
   planInstall,
   planUninstall,
   UsageError,
@@ -439,6 +442,209 @@ describe.skipIf(process.platform === 'win32')(
       expect(existsSync(manifest)).toBe(false);
       expect(existsSync(bridge)).toBe(false);
       expect(existsSync(chrome)).toBe(true);
+    });
+  },
+);
+
+describe('Chrome for Testing', () => {
+  it('uses its own user data directory on macOS and Linux', () => {
+    const mac = planInstall(context('darwin'), {
+      extensionIds: [CHROMIUM_ID],
+      browsers: ['chrome-for-testing'],
+    });
+    expect(mac.browsers[0]).toMatchObject({
+      name: 'Google Chrome for Testing',
+      manifestPath:
+        '/Users/me/Library/Application Support/Google/Chrome for Testing/NativeMessagingHosts/com.browsersweet.bridge.json',
+    });
+    const linux = planInstall(
+      context('linux', [], { env: { XDG_CONFIG_HOME: '/xdg' } }),
+      { extensionIds: [CHROMIUM_ID], browsers: ['chrome-for-testing'] },
+    );
+    expect(linux.browsers[0]?.manifestPath).toBe(
+      '/xdg/google-chrome-for-testing/NativeMessagingHosts/com.browsersweet.bridge.json',
+    );
+  });
+
+  it("is detected, and shares Chrome's registry key on Windows", () => {
+    const local = 'C:\\Users\\me\\AppData\\Local';
+    const ctx = context('win32', [
+      `${local}\\Google\\Chrome\\User Data`,
+      `${local}\\Google\\Chrome for Testing\\User Data`,
+    ]);
+    const plan = planInstall(ctx, { extensionIds: [CHROMIUM_ID] });
+    expect(plan.browsers.map((b) => b.key)).toEqual([
+      'chrome',
+      'chrome-for-testing',
+    ]);
+    const regs = plan.actions.filter((a) => a.kind === 'reg');
+    expect(regs).toHaveLength(1);
+    expect(plan.browsers[1]?.registryKeys).toEqual([
+      'HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.browsersweet.bridge',
+    ]);
+  });
+
+  it('parses its names', () => {
+    expect(parseBrowserKey('chrome-for-testing')).toBe('chrome-for-testing');
+    expect(parseBrowserKey('Chrome for Testing')).toBe('chrome-for-testing');
+    expect(parseBrowserKey('cft')).toBe('chrome-for-testing');
+  });
+});
+
+describe('--manifest-dir', () => {
+  const support = '/Users/me/Library/Application Support';
+  const ctx = context('darwin', [`${support}/Google/Chrome`]);
+
+  it('writes one manifest there instead of into the browsers', () => {
+    const plan = planInstall(ctx, {
+      extensionIds: [CHROMIUM_ID, GECKO_ID],
+      manifestDir: '/tmp/profile/NativeMessagingHosts',
+    });
+    const files = writes(plan.actions);
+    const manifests = Object.keys(files).filter((f) =>
+      f.endsWith('com.browsersweet.bridge.json'),
+    );
+    expect(manifests).toEqual([
+      '/tmp/profile/NativeMessagingHosts/com.browsersweet.bridge.json',
+    ]);
+    expect(JSON.parse(files[manifests[0] as string] as string)).toMatchObject({
+      path: `${support}/BrowserSweet/bridge/browsersweet-bridge`,
+      allowed_origins: [`chrome-extension://${CHROMIUM_ID}/`],
+    });
+    // The runtime, config and launcher are still installed.
+    expect(files[`${support}/BrowserSweet/bridge/config.json`]).toBeDefined();
+    expect(plan.browsers).toEqual([
+      {
+        key: 'chrome',
+        name: 'Chromium browsers (custom manifest directory)',
+        status: 'install',
+        manifestPath:
+          '/tmp/profile/NativeMessagingHosts/com.browsersweet.bridge.json',
+      },
+    ]);
+  });
+
+  it('writes a Firefox manifest for --browser firefox or a gecko id alone', () => {
+    const cases: { extensionIds: string[]; browsers: BrowserKey[] }[] = [
+      { extensionIds: [CHROMIUM_ID, GECKO_ID], browsers: ['firefox'] },
+      { extensionIds: [GECKO_ID], browsers: [] },
+    ];
+    for (const options of cases) {
+      const plan = planInstall(ctx, { ...options, manifestDir: '/tmp/ff' });
+      expect(
+        JSON.parse(
+          writes(plan.actions)[
+            '/tmp/ff/com.browsersweet.bridge.json'
+          ] as string,
+        ),
+      ).toMatchObject({ allowed_extensions: [GECKO_ID] });
+    }
+  });
+
+  it('rejects relative paths, mixed families and missing ids', () => {
+    expect(() =>
+      planInstall(ctx, { extensionIds: [CHROMIUM_ID], manifestDir: 'rel' }),
+    ).toThrow(/absolute/);
+    expect(() =>
+      planInstall(ctx, {
+        extensionIds: [CHROMIUM_ID, GECKO_ID],
+        browsers: ['chrome', 'firefox'],
+        manifestDir: '/tmp/x',
+      }),
+    ).toThrow(UsageError);
+    expect(() =>
+      planInstall(ctx, {
+        extensionIds: [CHROMIUM_ID],
+        browsers: ['firefox'],
+        manifestDir: '/tmp/x',
+      }),
+    ).toThrow(/Firefox extension id/);
+  });
+
+  it("doesn't touch the registry on Windows", () => {
+    const plan = planInstall(context('win32'), {
+      extensionIds: [CHROMIUM_ID],
+      manifestDir: 'D:\\hosts',
+    });
+    expect(plan.actions.some((a) => a.kind === 'reg')).toBe(false);
+    expect(
+      writes(plan.actions)['D:\\hosts\\com.browsersweet.bridge.json'],
+    ).toBeDefined();
+    expect(plan.notes.join(' ')).toMatch(/registry/);
+  });
+
+  it('uninstall removes only that manifest', () => {
+    const dir = '/tmp/profile/NativeMessagingHosts';
+    const manifest = `${dir}/com.browsersweet.bridge.json`;
+    const plan = planUninstall(context('darwin', [manifest]), {
+      manifestDir: dir,
+    });
+    expect(plan.actions).toEqual([{ kind: 'remove', path: manifest }]);
+    expect(plan.notes.join(' ')).toMatch(/Kept/);
+    expect(
+      planUninstall(context('darwin'), { manifestDir: dir }).actions,
+    ).toEqual([]);
+  });
+});
+
+describe.skipIf(process.platform === 'win32')(
+  'install, doctor and uninstall with --manifest-dir in a temp dir',
+  () => {
+    const dirs: string[] = [];
+    afterEach(() => {
+      for (const d of dirs.splice(0))
+        rmSync(d, { recursive: true, force: true });
+    });
+
+    it('round-trips', async () => {
+      const home = shortTempDir();
+      dirs.push(home);
+      const pkg = path.join(home, 'pkg');
+      mkdirSync(path.join(pkg, 'dist'), { recursive: true });
+      writeFileSync(path.join(pkg, 'dist', 'cli.js'), '');
+      const zod = path.join(home, 'zod');
+      mkdirSync(zod);
+      writeFileSync(path.join(zod, 'package.json'), '{}');
+      const ctx = context('linux', [], {
+        homedir: home,
+        env: {},
+        exists: existsSync,
+        packageRoot: pkg,
+        nodePath: process.execPath,
+        resolvePackageDir: (name) => (name === 'zod' ? zod : undefined),
+      });
+      const hosts = path.join(home, 'cft-profile', 'NativeMessagingHosts');
+      const plan = planInstall(ctx, {
+        extensionIds: [CHROMIUM_ID],
+        manifestDir: hosts,
+      });
+      expect(await applyPlan(plan, nodeApplyIo('linux'))).toEqual([]);
+      const manifest = path.join(hosts, 'com.browsersweet.bridge.json');
+      expect(existsSync(manifest)).toBe(true);
+
+      const doctor = checkInstall(ctx, nodeDoctorDeps, { manifestDir: hosts });
+      expect(doctor.filter((c) => c.level === 'fail')).toEqual([]);
+      expect(doctor.at(-1)).toEqual({
+        level: 'ok',
+        message: `Chromium manifest: ${manifest}`,
+      });
+      // Without --manifest-dir, a named browser with no manifest is a warning.
+      expect(
+        checkInstall(ctx, nodeDoctorDeps, {
+          browsers: ['chrome-for-testing'],
+        }).at(-1),
+      ).toEqual({
+        level: 'warn',
+        message: 'Google Chrome for Testing: no manifest',
+      });
+
+      const removal = planUninstall(ctx, { manifestDir: hosts });
+      expect(await applyPlan(removal, nodeApplyIo('linux'))).toEqual([]);
+      expect(existsSync(manifest)).toBe(false);
+      expect(existsSync(installLayout(ctx).launcherPath)).toBe(true);
+      expect(
+        checkInstall(ctx, nodeDoctorDeps, { manifestDir: hosts }).at(-1)?.level,
+      ).toBe('fail');
     });
   },
 );

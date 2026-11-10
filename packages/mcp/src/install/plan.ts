@@ -10,6 +10,7 @@ import {
   BROWSER_KEYS,
   BROWSER_NAMES,
   type BrowserKey,
+  type BrowserFamily,
   type BrowserLocation,
   MANIFEST_FILE,
   browserLocation,
@@ -157,6 +158,11 @@ export interface InstallOptions {
   readonly extensionIds: readonly string[];
   /** Limit to these browsers (installs even if not detected). Default: detected ones. */
   readonly browsers?: readonly BrowserKey[];
+  /**
+   * Write the manifest into this absolute directory instead of the browsers' own (tests, a
+   * browser started with a custom user data dir). No registry changes on Windows.
+   */
+  readonly manifestDir?: string;
 }
 
 function selectBrowsers(
@@ -186,36 +192,53 @@ function selectBrowsers(
   return { selected, outcomes };
 }
 
-/** What `install` will do. Pure: reads the machine only through `ctx`. */
-export function planInstall(
-  ctx: InstallContext,
-  options: InstallOptions,
-): Plan {
-  const p = pathFor(ctx.platform);
-  const chromiumIds: string[] = [];
-  const geckoIds: string[] = [];
-  for (const id of options.extensionIds) {
-    const kind = classifyExtensionId(id);
-    if (kind === 'chromium') chromiumIds.push(id);
-    else if (kind === 'firefox') geckoIds.push(id);
-    else {
-      throw new UsageError(
-        `"${id}" is not an extension id (Chromium: 32 letters a–p; Firefox: name@domain or {uuid})`,
-      );
-    }
-  }
-  if (chromiumIds.length === 0 && geckoIds.length === 0) {
+/**
+ * The one browser family a `--manifest-dir` manifest is for: that of the named browsers, else
+ * `fallback`.
+ */
+export function manifestDirFamily(
+  browsers: readonly BrowserKey[] | undefined,
+  fallback: BrowserFamily,
+): BrowserFamily {
+  const families = new Set((browsers ?? []).map(familyOf));
+  if (families.size > 1) {
     throw new UsageError(
-      'pass --extension-id <id> (the Browser Sweet extension id shown in Settings → Labs → Agent integration). Store ids are not published yet.',
+      '--manifest-dir holds one manifest: name browsers of one family (Chromium-based or Firefox), not both.',
     );
   }
+  return [...families][0] ?? fallback;
+}
 
-  const layout = installLayout(ctx);
-  const actions: Action[] = [];
-  const notes: string[] = [];
-  const { selected, outcomes } = selectBrowsers(ctx, options.browsers);
-  const browsers: BrowserOutcome[] = [...outcomes];
+/** The outcome line for a `--manifest-dir` manifest. */
+function customDirOutcome(
+  browsers: readonly BrowserKey[] | undefined,
+  family: BrowserFamily,
+): { key: BrowserKey; name: string } {
+  const key = browsers?.[0] ?? (family === 'firefox' ? 'firefox' : 'chrome');
+  const label = browsers?.length
+    ? browsers.map((b) => BROWSER_NAMES[b]).join(', ')
+    : family === 'firefox'
+      ? 'Firefox'
+      : 'Chromium browsers';
+  return { key, name: `${label} (custom manifest directory)` };
+}
 
+function requireAbsolute(ctx: InstallContext, dir: string): void {
+  if (!pathFor(ctx.platform).isAbsolute(dir)) {
+    throw new UsageError(`--manifest-dir must be an absolute path: ${dir}`);
+  }
+}
+
+/** Detected (or named) browsers that have an id of their family. Skips go into `browsers`. */
+function selectInstallable(
+  ctx: InstallContext,
+  requested: readonly BrowserKey[] | undefined,
+  chromiumIds: readonly string[],
+  geckoIds: readonly string[],
+  browsers: BrowserOutcome[],
+): BrowserLocation[] {
+  const { selected, outcomes } = selectBrowsers(ctx, requested);
+  browsers.push(...outcomes);
   const installable = selected.filter((location) => {
     const family = familyOf(location.key);
     const ids = family === 'firefox' ? geckoIds : chromiumIds;
@@ -234,13 +257,25 @@ export function planInstall(
   if (installable.length === 0) {
     throw new UsageError(
       selected.length === 0 && outcomes.length === 0
-        ? 'no supported browser found. Pass --browser <chrome|chromium|edge|brave|vivaldi|arc|firefox>.'
+        ? `no supported browser found. Pass --browser <${BROWSER_KEYS.join('|')}>, or --manifest-dir <dir>.`
         : `nothing to install: ${browsers.map((b) => `${b.name}: ${b.reason}`).join('; ')}`,
     );
   }
+  return installable;
+}
 
-  // Host runtime: a private copy of dist + the host's dependencies, so the manifest keeps working
-  // after the npx cache is cleared.
+/**
+ * The host runtime (a private copy of dist + the host's dependencies, so the manifest keeps
+ * working after the npx cache is cleared), the allow-list and the launcher.
+ */
+function runtimeActions(
+  ctx: InstallContext,
+  layout: InstallLayout,
+  chromiumIds: readonly string[],
+  geckoIds: readonly string[],
+): Action[] {
+  const p = pathFor(ctx.platform);
+  const actions: Action[] = [];
   actions.push({ kind: 'remove', path: layout.runtimeDir });
   actions.push({ kind: 'mkdir', path: layout.runtimeDir, mode: 0o700 });
   actions.push({
@@ -277,7 +312,7 @@ export function planInstall(
   const config: BridgeConfig = {
     v: 1,
     allowedOrigins: chromiumIds.map((id) => `chrome-extension://${id}/`),
-    allowedFirefoxExtensions: geckoIds,
+    allowedFirefoxExtensions: [...geckoIds],
   };
   actions.push({
     kind: 'write',
@@ -297,11 +332,86 @@ export function planInstall(
     mode: 0o755,
     show: true,
   });
+  return actions;
+}
 
-  const manifestFor = (key: BrowserKey) =>
-    familyOf(key) === 'firefox'
+/** What `install` will do. Pure: reads the machine only through `ctx`. */
+export function planInstall(
+  ctx: InstallContext,
+  options: InstallOptions,
+): Plan {
+  const p = pathFor(ctx.platform);
+  const chromiumIds: string[] = [];
+  const geckoIds: string[] = [];
+  for (const id of options.extensionIds) {
+    const kind = classifyExtensionId(id);
+    if (kind === 'chromium') chromiumIds.push(id);
+    else if (kind === 'firefox') geckoIds.push(id);
+    else {
+      throw new UsageError(
+        `"${id}" is not an extension id (Chromium: 32 letters a–p; Firefox: name@domain or {uuid})`,
+      );
+    }
+  }
+  if (chromiumIds.length === 0 && geckoIds.length === 0) {
+    throw new UsageError(
+      'pass --extension-id <id> (the Browser Sweet extension id shown in Settings → Labs → Agent integration). Store ids are not published yet.',
+    );
+  }
+
+  const layout = installLayout(ctx);
+  const notes: string[] = [];
+  const browsers: BrowserOutcome[] = [];
+  const manifestFor = (family: BrowserFamily) =>
+    family === 'firefox'
       ? firefoxManifest(layout.launcherPath, geckoIds)
       : chromiumManifest(layout.launcherPath, chromiumIds);
+
+  if (options.manifestDir !== undefined) {
+    const dir = options.manifestDir;
+    requireAbsolute(ctx, dir);
+    const family = manifestDirFamily(
+      options.browsers,
+      chromiumIds.length > 0 ? 'chromium' : 'firefox',
+    );
+    if ((family === 'firefox' ? geckoIds : chromiumIds).length === 0) {
+      throw new UsageError(
+        family === 'firefox'
+          ? 'no Firefox extension id for --manifest-dir (pass --extension-id <name@domain>)'
+          : 'no Chromium extension id for --manifest-dir (pass --extension-id <32 letters a–p>)',
+      );
+    }
+    const manifestPath = p.join(dir, MANIFEST_FILE);
+    const actions = runtimeActions(ctx, layout, chromiumIds, geckoIds);
+    actions.push({ kind: 'mkdir', path: dir });
+    actions.push({
+      kind: 'write',
+      path: manifestPath,
+      content: json(manifestFor(family)),
+      mode: 0o644,
+      show: true,
+    });
+    browsers.push({
+      ...customDirOutcome(options.browsers, family),
+      status: 'install',
+      manifestPath,
+    });
+    if (ctx.platform === 'win32') {
+      notes.push(
+        `Windows browsers find hosts through the registry, not a directory: point a NativeMessagingHosts\\${NATIVE_HOST_NAME} key at ${manifestPath} to use it.`,
+      );
+    }
+    return { actions, browsers, notes };
+  }
+
+  const installable = selectInstallable(
+    ctx,
+    options.browsers,
+    chromiumIds,
+    geckoIds,
+    browsers,
+  );
+  const actions = runtimeActions(ctx, layout, chromiumIds, geckoIds);
 
   if (ctx.platform === 'win32') {
     const written = new Set<string>();
@@ -315,7 +425,7 @@ export function planInstall(
         actions.push({
           kind: 'write',
           path: manifestPath,
-          content: json(manifestFor(location.key)),
+          content: json(manifestFor(family)),
           mode: 0o644,
           show: true,
         });
@@ -346,7 +456,7 @@ export function planInstall(
       actions.push({
         kind: 'write',
         path: manifestPath,
-        content: json(manifestFor(location.key)),
+        content: json(manifestFor(familyOf(location.key))),
         mode: 0o644,
         show: true,
       });
@@ -367,12 +477,38 @@ export function planInstall(
 /** What `uninstall` will do. */
 export function planUninstall(
   ctx: InstallContext,
-  options: { readonly browsers?: readonly BrowserKey[] } = {},
+  options: {
+    readonly browsers?: readonly BrowserKey[];
+    /** Remove only the manifest in this directory (see `InstallOptions.manifestDir`). */
+    readonly manifestDir?: string;
+  } = {},
 ): Plan {
   const layout = installLayout(ctx);
   const actions: Action[] = [];
   const browsers: BrowserOutcome[] = [];
   const notes: string[] = [];
+  if (options.manifestDir !== undefined) {
+    requireAbsolute(ctx, options.manifestDir);
+    const manifestPath = pathFor(ctx.platform).join(
+      options.manifestDir,
+      MANIFEST_FILE,
+    );
+    if (ctx.exists(manifestPath)) {
+      actions.push({ kind: 'remove', path: manifestPath });
+      const family = manifestDirFamily(options.browsers, 'chromium');
+      browsers.push({
+        ...customDirOutcome(options.browsers, family),
+        status: 'remove',
+        manifestPath,
+      });
+    } else {
+      notes.push(`No manifest in ${options.manifestDir}.`);
+    }
+    notes.push(
+      `Kept ${layout.bridgeDir} (browsers may use it). Run uninstall without --manifest-dir to remove it.`,
+    );
+    return { actions, browsers, notes };
+  }
   const keys = options.browsers?.length ? options.browsers : BROWSER_KEYS;
   const keysDone = new Set<string>();
   for (const key of keys) {

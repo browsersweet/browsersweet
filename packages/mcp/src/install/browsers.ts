@@ -3,6 +3,7 @@ import { type PathEnv, pathFor } from '../paths.js';
 
 export const BROWSER_KEYS = [
   'chrome',
+  'chrome-for-testing',
   'chromium',
   'edge',
   'brave',
@@ -14,6 +15,7 @@ export type BrowserKey = (typeof BROWSER_KEYS)[number];
 
 export const BROWSER_NAMES: Record<BrowserKey, string> = {
   chrome: 'Google Chrome',
+  'chrome-for-testing': 'Google Chrome for Testing',
   chromium: 'Chromium',
   edge: 'Microsoft Edge',
   brave: 'Brave',
@@ -43,6 +45,22 @@ export interface BrowserLocation {
 
 const CHROME_KEY = 'HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts';
 
+/*
+ * Chrome for Testing (the Chrome build Puppeteer and Playwright download) keeps its own user
+ * data directory, and Chromium reads per-user hosts from `<user data dir>/NativeMessagingHosts`
+ * on macOS and Linux (chrome/common/chrome_paths.cc, DIR_USER_NATIVE_MESSAGING):
+ * - macOS: ~/Library/Application Support/Google/Chrome for Testing
+ *   (chrome/common/chrome_paths_mac.mm: "Google/Chrome for Testing" under
+ *   GOOGLE_CHROME_FOR_TESTING_BRANDING)
+ * - Linux: $XDG_CONFIG_HOME/google-chrome-for-testing (chrome/common/chrome_paths_linux.cc)
+ * - Windows: user data in %LOCALAPPDATA%\Google\Chrome for Testing\User Data
+ *   (chrome/install_static/google_chrome_for_testing_install_modes.h, user_data_dir.cc). Only
+ *   Chromium-branded builds read a different registry key; every other build, Chrome for Testing
+ *   included, reads HKCU\Software\Google\Chrome\NativeMessagingHosts
+ *   (chrome/browser/extensions/api/messaging/launch_context_win.cc).
+ * Source: https://chromium.googlesource.com/chromium/src at a52e438f (November 2026).
+ */
+
 /** `undefined` when the browser doesn't exist on this OS (Arc on Linux/Windows). */
 export function browserLocation(
   key: BrowserKey,
@@ -61,6 +79,8 @@ export function browserLocation(
       switch (key) {
         case 'chrome':
           return chromium('Google', 'Chrome');
+        case 'chrome-for-testing':
+          return chromium('Google', 'Chrome for Testing');
         case 'chromium':
           return chromium('Chromium');
         case 'edge':
@@ -90,6 +110,8 @@ export function browserLocation(
       switch (key) {
         case 'chrome':
           return chromium('google-chrome');
+        case 'chrome-for-testing':
+          return chromium('google-chrome-for-testing');
         case 'chromium':
           return chromium('chromium');
         case 'edge':
@@ -125,6 +147,17 @@ export function browserLocation(
           return {
             key,
             detectPath: p.join(local, 'Google', 'Chrome', 'User Data'),
+            registryKeys: keys(CHROME_KEY),
+          };
+        case 'chrome-for-testing':
+          return {
+            key,
+            detectPath: p.join(
+              local,
+              'Google',
+              'Chrome for Testing',
+              'User Data',
+            ),
             registryKeys: keys(CHROME_KEY),
           };
         case 'chromium':
@@ -187,6 +220,9 @@ export function parseBrowserKey(value: string): BrowserKey | undefined {
   const lower = value.toLowerCase().replace(/\s+/g, '');
   const aliases: Record<string, BrowserKey> = {
     googlechrome: 'chrome',
+    chromefortesting: 'chrome-for-testing',
+    googlechromefortesting: 'chrome-for-testing',
+    cft: 'chrome-for-testing',
     msedge: 'edge',
     microsoftedge: 'edge',
     bravebrowser: 'brave',

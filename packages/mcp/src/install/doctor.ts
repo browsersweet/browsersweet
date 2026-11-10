@@ -9,10 +9,18 @@ import { orderByFocus } from '../client/profiles.js';
 import {
   BROWSER_KEYS,
   BROWSER_NAMES,
+  type BrowserFamily,
+  type BrowserKey,
   MANIFEST_FILE,
   browserLocation,
+  familyOf,
 } from './browsers.js';
-import { type InstallContext, installLayout } from './plan.js';
+import {
+  type InstallContext,
+  installLayout,
+  manifestDirFamily,
+  UsageError,
+} from './plan.js';
 import { pathFor } from '../paths.js';
 
 export type CheckLevel = 'ok' | 'warn' | 'fail' | 'info';
@@ -50,8 +58,47 @@ export const nodeDoctorDeps: DoctorDeps = {
   },
 };
 
+export interface DoctorOptions {
+  /** Only check these browsers (and warn when one has no manifest). Default: every one. */
+  readonly browsers?: readonly BrowserKey[];
+  /** Check the manifest in this directory instead of the browsers' (see `install --manifest-dir`). */
+  readonly manifestDir?: string;
+}
+
+/** Problems with a host manifest, or `undefined` when it can't be parsed. */
+function manifestProblems(
+  text: string,
+  family: BrowserFamily,
+  launcherPath: string,
+): string[] | undefined {
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  const problems: string[] = [];
+  if (manifest['name'] !== NATIVE_HOST_NAME) problems.push('wrong name');
+  if (manifest['type'] !== 'stdio') problems.push('type is not stdio');
+  if (manifest['path'] !== launcherPath) {
+    problems.push(`path is ${String(manifest['path'])}`);
+  }
+  const allowed =
+    family === 'firefox'
+      ? manifest['allowed_extensions']
+      : manifest['allowed_origins'];
+  if (!Array.isArray(allowed) || allowed.length === 0) {
+    problems.push('no allowed extensions');
+  }
+  return problems;
+}
+
 /** Static checks: node, runtime, launcher, config, manifests. */
-export function checkInstall(ctx: InstallContext, deps: DoctorDeps): Check[] {
+export function checkInstall(
+  ctx: InstallContext,
+  deps: DoctorDeps,
+  options: DoctorOptions = {},
+): Check[] {
   const checks: Check[] = [];
   const add = (level: CheckLevel, message: string) =>
     checks.push({ level, message });
@@ -110,53 +157,89 @@ export function checkInstall(ctx: InstallContext, deps: DoctorDeps): Check[] {
     );
   }
 
-  for (const key of BROWSER_KEYS) {
+  const checkManifest = (
+    name: string,
+    manifestPath: string,
+    family: BrowserFamily,
+  ): void => {
+    let text: string;
+    try {
+      text = deps.readFile(manifestPath);
+    } catch {
+      add('fail', `${name}: can't read ${manifestPath}`);
+      return;
+    }
+    const problems = manifestProblems(text, family, layout.launcherPath);
+    if (!problems) add('fail', `${name}: ${manifestPath} is not valid JSON`);
+    else {
+      add(
+        problems.length ? 'fail' : 'ok',
+        `${name}: ${manifestPath}${problems.length ? ` (${problems.join('; ')})` : ''}`,
+      );
+    }
+  };
+
+  if (options.manifestDir !== undefined) {
+    const manifestPath = p.join(options.manifestDir, MANIFEST_FILE);
+    let family: BrowserFamily;
+    try {
+      family = manifestDirFamily(
+        options.browsers,
+        chromiumOrigins.length > 0 || geckoIds.length === 0
+          ? 'chromium'
+          : 'firefox',
+      );
+    } catch (error) {
+      add('fail', (error as UsageError).message);
+      return checks;
+    }
+    if (!ctx.exists(manifestPath)) {
+      add(
+        'fail',
+        `no manifest in ${options.manifestDir}; run install --manifest-dir`,
+      );
+    } else {
+      checkManifest(
+        `${family === 'firefox' ? 'Firefox' : 'Chromium'} manifest`,
+        manifestPath,
+        family,
+      );
+    }
+    return checks;
+  }
+
+  const requested = options.browsers?.length ? options.browsers : undefined;
+  for (const key of requested ?? BROWSER_KEYS) {
     const location = browserLocation(key, ctx);
-    if (!location) continue;
     const name = BROWSER_NAMES[key];
-    const detected = ctx.exists(location.detectPath);
+    if (!location) {
+      if (requested) add('warn', `${name}: not supported on ${ctx.platform}`);
+      continue;
+    }
+    // Named browsers are expected to be set up, detected or not.
+    const expected = requested !== undefined || ctx.exists(location.detectPath);
     let manifestPath: string | undefined;
     if (ctx.platform === 'win32') {
       const registryKey = location.registryKeys?.[0];
       const out = registryKey ? deps.regQuery(registryKey) : undefined;
       manifestPath = out ? /REG_SZ\s+(.+)$/m.exec(out)?.[1]?.trim() : undefined;
       if (!manifestPath) {
-        if (detected) add('warn', `${name}: not installed (no ${registryKey})`);
+        if (expected) add('warn', `${name}: not installed (no ${registryKey})`);
         continue;
       }
     } else {
       manifestPath = p.join(location.manifestDir as string, MANIFEST_FILE);
       if (!ctx.exists(manifestPath)) {
-        if (detected) add('warn', `${name}: detected, no manifest`);
+        if (expected) {
+          add(
+            'warn',
+            `${name}: ${requested ? 'no manifest' : 'detected, no manifest'}`,
+          );
+        }
         continue;
       }
     }
-    try {
-      const manifest = JSON.parse(deps.readFile(manifestPath)) as Record<
-        string,
-        unknown
-      >;
-      const problems: string[] = [];
-      if (manifest['name'] !== NATIVE_HOST_NAME) problems.push('wrong name');
-      if (manifest['type'] !== 'stdio') problems.push('type is not stdio');
-      if (manifest['path'] !== layout.launcherPath) {
-        problems.push(`path is ${String(manifest['path'])}`);
-      }
-      const allowed = (
-        key === 'firefox'
-          ? manifest['allowed_extensions']
-          : manifest['allowed_origins']
-      ) as unknown;
-      if (!Array.isArray(allowed) || allowed.length === 0) {
-        problems.push('no allowed extensions');
-      }
-      add(
-        problems.length ? 'fail' : 'ok',
-        `${name}: ${manifestPath}${problems.length ? ` (${problems.join('; ')})` : ''}`,
-      );
-    } catch {
-      add('fail', `${name}: ${manifestPath} is not valid JSON`);
-    }
+    checkManifest(name, manifestPath, familyOf(key));
   }
   return checks;
 }
