@@ -213,3 +213,25 @@ export function until(
     tick();
   });
 }
+
+/**
+ * Split an untrusted block into its heading, nonce and fenced body, failing unless the fence is
+ * well formed (heading line, opening marker, body, closing marker with the same nonce, nothing
+ * after it) and the body can't close it early.
+ */
+export function unfence(text: string): {
+  heading: string;
+  nonce: string;
+  body: string;
+} {
+  const match =
+    /^(UNTRUSTED [^\n]*)\n<untrusted-content ([0-9A-Za-z]+)>\n([\s\S]*)\n<\/untrusted-content \2>$/.exec(
+      text,
+    );
+  if (!match) throw new Error(`not fenced: ${text.slice(0, 300)}`);
+  const [, heading = '', nonce = '', body = ''] = match;
+  if (body.includes(nonce)) {
+    throw new Error(`the body contains the nonce ${nonce}`);
+  }
+  return { heading, nonce, body };
+}

@@ -55,11 +55,13 @@ ToolDescriptor = {
   description: string;        // ≤ 4096 chars
   inputSchema: JSONSchema;    // type: "object", ≤ 64 KB; the registry's inputJsonSchema
   annotations?: { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint?,
-                  untrustedOutput?: boolean };   // true: the client labels all output untrusted
+                  untrustedOutput?: boolean };   // website-derived output (see below)
 }
 ```
 
 Don't define a `profile` property: the client adds it to every tool and strips it before forwarding.
+
+**`untrustedOutput`:** the extension SHOULD set it on every tool whose results include anything a website controls: page text and selections, but also tab titles and URLs, kept, favorite and archived titles, and handoffs. That is every v1 read tool. The client doesn't rely on it: from `@browsersweet/mcp` 0.1.0-next.1 it fences the output of every extension tool as untrusted regardless (`TRUSTED_OUTPUT_TOOLS`, the allow-list of exceptions, is empty), so an older or misconfigured extension can't put website text in front of the model unfenced.
 
 ### Calls
 
@@ -80,7 +82,7 @@ ImagePart = { type: 'image'; mimeType: 'image/png' | 'image/jpeg';
               source?: { url?, title?, tabId? } }
 ```
 
-- The MCP client maps `TextPart` to MCP text content and `ImagePart` to MCP image content. Untrusted images get a text notice right before them (an image can't be fenced like text).
+- The MCP client maps `data` and each `TextPart` to MCP text content and `ImagePart` to MCP image content. Every text block from an extension tool is fenced: a fixed heading line, then `<untrusted-content NONCE>`, the content, `</untrusted-content NONCE>`. The nonce is random per block (96 bits) and re-drawn if the content contains it, so content can't close the fence early. A part's `source` (title, URL) goes inside the fence as `source: {"title":…,"url":…}` (JSON, control characters removed), never in the heading. Images get a fenced text notice right before them (an image can't be fenced like text). Blocks carry `_meta["com.browsersweet/untrusted"] = true`.
 - Images make big messages; `encodeForWire` chunks them like anything else (see Chunking), and the whole result must still fit in 32 Mi characters of JSON.
 - **Receivers skip content parts whose `type` they don't know** (a lowercase name), so new part types aren't breaking. Parts of a known type must still be valid. `ImagePart` is new in `@browsersweet/mcp` 0.1.0: hosts older than that (`hello.ack.host.version` < 0.1.0) reject a result containing one, so check the host version before sending images. (No 0.0.x release was published to npm.)
 
@@ -139,7 +141,7 @@ The host lives exactly as long as the port. When the extension disconnects (or t
 ## 3. What the extension must do
 
 1. Request the optional `nativeMessaging` permission when Labs → Agent integration is turned on; register nothing while it's off.
-2. Connect, send `hello`, wait for `hello.ack`, send `tools.list` (from `mcpTools(registry)`; add `annotations.untrustedOutput: true` to `get_page_text`).
+2. Connect, send `hello`, wait for `hello.ack`, send `tools.list` (from `mcpTools(registry)`; add `annotations.untrustedOutput: true` to every tool that returns website-derived data, which is all v1 read tools).
 3. Answer `tools.call` by dispatching the registry command with `source: 'mcp'`; return `{ data }` per §5; put page text in a `content` part with `untrusted: true` and `source`; return `permission_required` when site access is missing.
 4. Send `event: profile.focused` on `windows.onFocusChanged` (not `WINDOW_ID_NONE`) and `handoffs.changed` when handoffs change.
 5. Chunk outgoing messages with `encodeForWire`, reassemble incoming `chunk`s with `ChunkAssembler`.
@@ -174,7 +176,7 @@ Shapes in `src/protocol/workspace.ts` (all extra fields allowed):
 
 **`get_active_tab`** answers with the active tab in the profile's last-focused normal window (`chrome.windows.getLastFocused({ windowTypes: ['normal'] })`), whether or not the browser has focus now: an agent usually runs in a terminal or another app, so the browser is rarely focused when it asks. `tab` is absent only when the profile has no normal window (popups, app and devtools windows don't count). Which profile answers is the client's usual default, the most recently focused one (`profile.focused`, §2).
 
-Times are epoch milliseconds. The client always labels `get_page_text` and `get_handoffs` output as untrusted, whatever the extension sends.
+Times are epoch milliseconds. Titles, names and URLs in these results are written by websites (or by the user, for Space and folder names). The client fences every tool's output as untrusted, whatever the extension sends (see §2, `untrustedOutput`).
 
 ## 6. Compatibility notes
 

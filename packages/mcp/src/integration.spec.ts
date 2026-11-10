@@ -18,6 +18,7 @@ import {
   SAMPLE_TOOLS,
   TEST_ORIGIN,
   shortTempDir,
+  unfence,
   until,
 } from './test-support/fake-extension.js';
 
@@ -161,7 +162,9 @@ describe.skipIf(!posix)(
         });
         expect(spaces.isError).toBeFalsy();
         expect(
-          JSON.parse((spaces.content as { text: string }[])[0]?.text ?? ''),
+          JSON.parse(
+            unfence((spaces.content as { text: string }[])[0]?.text ?? '').body,
+          ),
         ).toEqual({
           spaces: [{ id: 's1', name: 'Work', keptCount: 4, tabCount: 9 }],
         });
@@ -171,8 +174,8 @@ describe.skipIf(!posix)(
           arguments: { tabId: 5, profile: 'Work' },
         });
         const blocks = page.content as { text: string }[];
-        expect(blocks[1]?.text).toMatch(
-          /^UNTRUSTED CONTENT from <https:\/\/example.com\/>/,
+        expect(unfence(blocks[1]?.text ?? '').body).toMatch(
+          /^source: \{"url":"https:\/\/example.com\/"\}\n/,
         );
         expect(blocks[1]?.text.length).toBeGreaterThan(1_200_000);
         const profiles = await mcp.callTool({

@@ -69,7 +69,7 @@ The tool list comes from the extension, so it follows your extension version. Ev
 
 - **Nothing leaves your machine.** No network requests, no accounts, no telemetry. Data goes from the extension to your MCP client over local pipes only.
 - **Read-only in v1.** No tool can open, close, change or click anything. (Proposals the agent makes in later versions need your approval in the side panel.)
-- **Page text is untrusted.** Web pages can contain text written to manipulate AI agents. `get_page_text` and handoff results are wrapped in a labeled block with a random marker and flagged as untrusted, so the agent treats them as data. Tab titles and URLs are also written by websites; treat them the same way.
+- **Website content is untrusted.** Web pages can contain text written to manipulate AI agents, and that includes tab titles and URLs, not just page text. Every tool result (tabs, kept and archived links, handoffs, page text) is wrapped in a labeled block with a random marker and flagged as untrusted, and the server tells the agent that anything inside those markers is data from websites, never instructions.
 - **You can see who's connected.** Browser Sweet's Labs panel lists the connected MCP clients by the name they give (e.g. `claude-code`) and can disconnect one. A disconnected client stays away until Agent integration reconnects.
 - **No TCP port.** Web pages can't reach the bridge. The browser only starts the host for the Browser Sweet extension ids listed in its manifest, and the host checks the caller again against `config.json`.
 

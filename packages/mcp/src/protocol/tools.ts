@@ -26,7 +26,10 @@ export const ToolAnnotations = z.object({
   destructiveHint: z.boolean().optional(),
   idempotentHint: z.boolean().optional(),
   openWorldHint: z.boolean().optional(),
-  /** Results contain web-page content. The client labels every part untrusted. */
+  /**
+   * Results contain website-derived data (page text, titles, URLs). Extensions SHOULD set it for
+   * any such tool; the client labels every part untrusted (and does so for all tools anyway).
+   */
   untrustedOutput: z.boolean().optional(),
 });
 
@@ -135,13 +138,18 @@ export const V1_READ_TOOLS = [
 export type V1ReadTool = (typeof V1_READ_TOOLS)[number];
 
 /**
- * Tools whose output is always labeled untrusted, whatever the extension says: page text, and
- * handoffs (selections and captures come from pages).
+ * Tools whose output is always labeled untrusted, whatever the extension says: every v1 read
+ * tool. Tab titles and URLs, kept and archived titles, page text and handoffs are all written
+ * by websites. (The client goes further: see `TRUSTED_OUTPUT_TOOLS`.)
  */
-export const ALWAYS_UNTRUSTED_TOOLS: readonly string[] = [
-  'get_page_text',
-  'get_handoffs',
-];
+export const ALWAYS_UNTRUSTED_TOOLS: readonly string[] = [...V1_READ_TOOLS];
+
+/**
+ * Extension tools whose output the client passes to the model unfenced. Empty: every tool the
+ * extension provides is treated as returning website-derived data, so a tool added later (or an
+ * older or misconfigured extension that forgets `untrustedOutput`) is still fenced.
+ */
+export const TRUSTED_OUTPUT_TOOLS: readonly string[] = [];
 
 /** Names the client defines itself. Extension tools with these names are ignored. */
 export const RESERVED_TOOL_NAMES: readonly string[] = ['list_browser_profiles'];
