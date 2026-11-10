@@ -191,7 +191,11 @@ export async function checkHosts(
       });
     }
   }
-  const pool = new DiscoveryPool({ dirs: () => dirs, clientVersion });
+  const pool = new DiscoveryPool({
+    dirs: () => dirs,
+    clientName: 'browsersweet-mcp doctor',
+    clientVersion,
+  });
   try {
     const hosts = orderByFocus(await pool.list());
     if (hosts.length === 0) {

@@ -107,10 +107,22 @@ export const ToolsResultMessage = z
   });
 export type ToolsResultMessage = z.infer<typeof ToolsResultMessage>;
 
+/**
+ * Disconnect one MCP client (an entry of `host.status.clientList`). The host closes that socket;
+ * clients from this package don't reconnect to the same host. Hosts that don't send
+ * `clientList` predate this message and ignore it.
+ */
+export const ClientsDisconnectMessage = z.object({
+  type: z.literal('clients.disconnect'),
+  clientId: MessageId,
+});
+export type ClientsDisconnectMessage = z.infer<typeof ClientsDisconnectMessage>;
+
 export const ExtensionToHostMessage = z.discriminatedUnion('type', [
   HelloMessage,
   ToolsListMessage,
   ToolsResultMessage,
+  ClientsDisconnectMessage,
   EventMessage,
   PingMessage,
   PongMessage,
@@ -148,11 +160,36 @@ export const ToolsCancelMessage = z.object({
   id: MessageId,
 });
 
-/** How many MCP clients are connected, for the extension's status indicator. */
+/** Most entries in `host.status.clientList` (the host accepts at most 16 sockets by default). */
+export const MAX_STATUS_CLIENTS = 64;
+
+/** One connected MCP client, as the extension sees it in `host.status.clientList`. */
+export const ClientSummary = z.object({
+  /** Host-assigned, unique for the host's lifetime. Pass it to `clients.disconnect`. */
+  id: MessageId,
+  /**
+   * The MCP client's `clientInfo.name` from its `initialize` request (e.g. "claude-code"). Until
+   * that arrives, or for local tools that aren't MCP clients, the socket client's own name.
+   */
+  name: z.string().max(128),
+  version: z.string().max(64),
+  /** Epoch ms. */
+  connectedAt: z.number(),
+});
+export type ClientSummary = z.infer<typeof ClientSummary>;
+
+/**
+ * The connected MCP clients, for the extension's status indicator. Sent whenever a client
+ * connects, disconnects or reports its identity.
+ */
 export const HostStatusMessage = z.object({
   type: z.literal('host.status'),
+  /** How many clients are connected (always equals `clientList.length` when that is present). */
   clients: z.int().min(0),
+  /** Who they are. Optional: older hosts send only the count. */
+  clientList: z.array(ClientSummary).max(MAX_STATUS_CLIENTS).optional(),
 });
+export type HostStatusMessage = z.infer<typeof HostStatusMessage>;
 
 export const HostToExtensionMessage = z.discriminatedUnion('type', [
   HelloAckMessage,
@@ -188,6 +225,8 @@ const KNOWN = new Set([
   'tools.call',
   'tools.cancel',
   'host.status',
+  'clients.disconnect',
+  'client.info',
   'chunk',
   'client.hello',
   'host.hello',

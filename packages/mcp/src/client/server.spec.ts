@@ -20,9 +20,13 @@ import {
 import { DiscoveryPool, type HostHandle, type HostSource } from './pool.js';
 import { resolveProfile } from './profiles.js';
 import {
+  DISCONNECTED_BY_USER_MESSAGE,
   NOT_CONNECTED_MESSAGE,
   createBridgeServer,
+  forwardClientInfo,
+  mcpClientInfo,
   notifyOnToolChanges,
+  renderResult,
 } from './server.js';
 import { wrapUntrusted } from './untrusted.js';
 
@@ -75,15 +79,20 @@ function source(hosts: HostHandle[]): HostSource {
   };
 }
 
-async function client(src: HostSource) {
+async function client(
+  src: HostSource,
+  info: { name: string; version: string } = { name: 'test', version: '1' },
+) {
   const server = createBridgeServer(src, {
     version: 't',
     nonce: () => 'NONCE',
   });
-  if (src instanceof DiscoveryPool)
+  if (src instanceof DiscoveryPool) {
     cleanups.push(notifyOnToolChanges(server, src, 10));
+    forwardClientInfo(server, src);
+  }
   const [a, b] = InMemoryTransport.createLinkedPair();
-  const mcp = new Client({ name: 'test', version: '1' });
+  const mcp = new Client(info);
   await Promise.all([server.connect(a), mcp.connect(b)]);
   cleanups.push(async () => {
     await mcp.close();
@@ -93,6 +102,54 @@ async function client(src: HostSource) {
 }
 
 describe('MCP server (client mode)', () => {
+  it('renders images as MCP image content, labeling untrusted ones', () => {
+    const blocks = renderResult(
+      'get_handoffs',
+      {
+        content: [
+          {
+            type: 'image',
+            mimeType: 'image/jpeg',
+            data: 'AAAA',
+            source: { url: 'https://a.example/' },
+          },
+          { type: 'from.the.future', x: 1 },
+          { type: 'text', text: 'after' },
+        ],
+      },
+      undefined,
+      () => 'N',
+    );
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'image', 'text']);
+    expect((blocks[0] as Text).text).toMatch(
+      /^UNTRUSTED IMAGE from <https:\/\/a.example\/>/,
+    );
+    expect(blocks[1]).toMatchObject({
+      type: 'image',
+      mimeType: 'image/jpeg',
+      data: 'AAAA',
+      _meta: { 'com.browsersweet/untrusted': true },
+    });
+    const trusted = renderResult(
+      'list_spaces',
+      { content: [{ type: 'image', mimeType: 'image/png', data: 'AAAA' }] },
+      undefined,
+    );
+    expect(trusted).toEqual([
+      { type: 'image', mimeType: 'image/png', data: 'AAAA' },
+    ]);
+  });
+
+  it('trims clientInfo to the socket limits', () => {
+    expect(mcpClientInfo(undefined)).toBeUndefined();
+    expect(mcpClientInfo({ name: '  ' })).toBeUndefined();
+    expect(mcpClientInfo({ name: 'claude-code', version: '2.1.0' })).toEqual({
+      name: 'claude-code',
+      version: '2.1.0',
+    });
+    expect(mcpClientInfo({ name: 'x'.repeat(300) })?.name).toHaveLength(128);
+  });
+
   it('lists the extension tools plus list_browser_profiles, each with `profile`', async () => {
     const mcp = await client(source([fakeHost({ id: 'a' })]));
     const { tools } = await mcp.listTools();
@@ -371,5 +428,58 @@ describe('against a real host and fake extension', () => {
       'list_browser_profiles',
       'list_spaces',
     ]);
+  });
+
+  it("forwards the MCP client's name and stays away once disconnected", async () => {
+    const runDir = path.join(shortTempDir(), 'run');
+    ensurePrivateDir(runDir);
+    const toHost = new PassThrough();
+    const fromHost = new PassThrough();
+    const host = new BridgeHost({
+      input: toHost,
+      output: fromHost,
+      caller: {
+        kind: 'chromium',
+        origin: TEST_ORIGIN,
+        extensionId: TEST_EXTENSION_ID,
+      },
+      runDir,
+      platform: process.platform,
+      version: 't',
+    });
+    const extension = new FakeExtension(toHost, fromHost, {
+      tools: SAMPLE_TOOLS,
+    });
+    extension.hello();
+    extension.sendTools();
+    await host.ready;
+    const pool = new DiscoveryPool({
+      dirs: () => [runDir],
+      clientVersion: 't',
+      retryAfterMs: 0,
+    });
+    cleanups.push(async () => {
+      pool.close();
+      await host.close('done');
+      rmSync(path.dirname(runDir), { recursive: true, force: true });
+    });
+    const mcp = await client(pool, { name: 'claude-code', version: '2.1.0' });
+    expect((await mcp.listTools()).tools).toHaveLength(3);
+    await until(() => host.clients[0]?.name === 'claude-code');
+    expect(host.clients[0]?.version).toBe('2.1.0');
+
+    extension.send({
+      type: 'clients.disconnect',
+      clientId: host.clients[0]?.id ?? '',
+    });
+    await until(() => pool.disconnectedByUser() === 1);
+    await pool.refresh();
+    await pool.refresh();
+    expect(host.clientCount).toBe(0);
+    const result = await mcp.callTool({ name: 'list_spaces', arguments: {} });
+    expect(result.isError).toBe(true);
+    expect((result.content as Text[])[0]?.text).toBe(
+      DISCONNECTED_BY_USER_MESSAGE,
+    );
   });
 });

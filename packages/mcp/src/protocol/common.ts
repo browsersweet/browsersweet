@@ -49,6 +49,8 @@ export const ERROR_CODES = [
   'protocol_unsupported',
   /** Socket client failed the token check. */
   'unauthorized',
+  /** The user disconnected this MCP client in the extension (`clients.disconnect`). */
+  'disconnected',
   'internal',
 ] as const;
 export type KnownErrorCode = (typeof ERROR_CODES)[number];

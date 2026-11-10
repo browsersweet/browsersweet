@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
   ExtensionToHostMessage,
   HostToExtensionMessage,
@@ -6,7 +7,7 @@ import {
   parseMessage,
 } from './native.js';
 import { ClientToHostMessage, HostRecord } from './socket.js';
-import { ToolDescriptor } from './tools.js';
+import { ToolDescriptor, ToolResult } from './tools.js';
 import { KeptNode, ListSpacesData, PageTextData } from './workspace.js';
 
 const hello = {
@@ -137,6 +138,72 @@ describe('protocol validation', () => {
       }).success,
     ).toBe(false);
     expect(HostRecord.safeParse({ v: 1 }).success).toBe(false);
+  });
+
+  it('adds client identity without breaking count-only peers', () => {
+    const status = {
+      type: 'host.status',
+      clients: 1,
+      clientList: [
+        { id: 'a1b2c3', name: 'claude-code', version: '2.1.0', connectedAt: 1 },
+      ],
+    };
+    // What a 0.0.x extension validates host.status with.
+    const countOnly = z.object({
+      type: z.literal('host.status'),
+      clients: z.int().min(0),
+    });
+    expect(countOnly.parse(status)).toEqual({
+      type: 'host.status',
+      clients: 1,
+    });
+    expect(HostToExtensionMessage.parse(status)).toEqual(status);
+    // Older hosts send the count alone.
+    expect(
+      HostToExtensionMessage.safeParse({ type: 'host.status', clients: 0 })
+        .success,
+    ).toBe(true);
+    expect(
+      ExtensionToHostMessage.safeParse({
+        type: 'clients.disconnect',
+        clientId: 'a1b2c3',
+      }).success,
+    ).toBe(true);
+    expect(
+      ClientToHostMessage.safeParse({
+        type: 'client.info',
+        mcpClient: { name: 'cursor', version: '1.0' },
+      }).success,
+    ).toBe(true);
+    expect(
+      ClientToHostMessage.safeParse({
+        type: 'client.info',
+        mcpClient: { name: '', version: '1.0' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates image parts and skips unknown part types', () => {
+    const image = {
+      type: 'image',
+      mimeType: 'image/png',
+      data: 'iVBORw0KGgo=',
+    };
+    expect(ToolResult.safeParse({ content: [image] }).success).toBe(true);
+    expect(
+      ToolResult.safeParse({ content: [{ ...image, mimeType: 'image/gif' }] })
+        .success,
+    ).toBe(false);
+    expect(
+      ToolResult.safeParse({ content: [{ ...image, data: 'not base64!' }] })
+        .success,
+    ).toBe(false);
+    expect(ToolResult.safeParse({ content: [{ type: 'text' }] }).success).toBe(
+      false,
+    );
+    expect(
+      ToolResult.safeParse({ content: [{ type: 'audio', data: 'x' }] }).success,
+    ).toBe(true);
   });
 
   it('describes the v1 workspace data shapes', () => {

@@ -1,5 +1,5 @@
 import type { ToolArguments } from '../protocol/common.js';
-import type { HostState } from '../protocol/socket.js';
+import type { HostState, McpClientInfo } from '../protocol/socket.js';
 import { isProcessAlive, readRecords } from '../host/records.js';
 import { HostConnection, type ToolCallOutcome } from './connection.js';
 
@@ -20,12 +20,16 @@ export interface HostSource {
   list(): Promise<readonly HostHandle[]>;
   /** Called when hosts come or go, or a host's state (tools, focus) changes. */
   onChange(listener: () => void): () => void;
+  /** How many hosts the user disconnected this client from (in the extension). */
+  disconnectedByUser?(): number;
   close(): void;
 }
 
 export interface DiscoveryPoolOptions {
   /** Socket directories to scan (`runDirCandidates`). */
   readonly dirs: () => readonly string[];
+  /** This process, as the host's socket client (default `@browsersweet/mcp`). */
+  readonly clientName?: string;
   readonly clientVersion: string;
   readonly isAlive?: (pid: number) => boolean;
   readonly connectTimeoutMs?: number;
@@ -38,6 +42,9 @@ export interface DiscoveryPoolOptions {
 export class DiscoveryPool implements HostSource {
   private readonly connections = new Map<string, HostConnection>();
   private readonly failed = new Map<string, number>();
+  /** Record files of hosts that disconnected us at the user's request. Never retried. */
+  private readonly refused = new Set<string>();
+  private mcpClient: McpClientInfo | undefined;
   private readonly listeners = new Set<() => void>();
   private refreshing: Promise<void> | undefined;
   private timer: NodeJS.Timeout | undefined;
@@ -48,6 +55,21 @@ export class DiscoveryPool implements HostSource {
   onChange(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * The MCP client this server talks to (`clientInfo` from `initialize`). Sent to every host now
+   * and in later `client.hello`s, so the extension can show who is connected.
+   */
+  setMcpClient(info: McpClientInfo): void {
+    this.mcpClient = info;
+    for (const connection of this.connections.values()) {
+      connection.setMcpClient(info);
+    }
+  }
+
+  disconnectedByUser(): number {
+    return this.refused.size;
   }
 
   /** Rescan every `intervalMs` so new browsers show up without a call. */
@@ -105,7 +127,7 @@ export class DiscoveryPool implements HostSource {
     for (const dir of this.options.dirs()) {
       for (const { file, record } of readRecords(dir)) {
         seen.add(file);
-        if (this.connections.has(file)) continue;
+        if (this.connections.has(file) || this.refused.has(file)) continue;
         if (!alive(record.pid)) continue;
         const failedAt = this.failed.get(file);
         if (
@@ -117,6 +139,10 @@ export class DiscoveryPool implements HostSource {
         attempts.push(
           HostConnection.connect(record, {
             clientVersion: this.options.clientVersion,
+            ...(this.options.clientName
+              ? { clientName: this.options.clientName }
+              : {}),
+            ...(this.mcpClient ? { mcpClient: this.mcpClient } : {}),
             ...(this.options.connectTimeoutMs
               ? { timeoutMs: this.options.connectTimeoutMs }
               : {}),
@@ -128,8 +154,11 @@ export class DiscoveryPool implements HostSource {
               }
               this.failed.delete(file);
               this.connections.set(file, connection);
+              // Covers an identity that arrived while this connection was opening.
+              if (this.mcpClient) connection.setMcpClient(this.mcpClient);
               connection.on('state', () => this.changed());
               connection.on('close', () => {
+                if (connection.disconnectedByUser) this.refused.add(file);
                 if (this.connections.get(file) === connection) {
                   this.connections.delete(file);
                   this.changed();
@@ -157,6 +186,11 @@ export class DiscoveryPool implements HostSource {
     }
     for (const file of this.failed.keys()) {
       if (!seen.has(file)) this.failed.delete(file);
+    }
+    // A new host (the extension reconnected) writes a new record, so this only blocks the host
+    // that disconnected us.
+    for (const file of this.refused) {
+      if (!seen.has(file)) this.refused.delete(file);
     }
     await Promise.all(attempts);
   }

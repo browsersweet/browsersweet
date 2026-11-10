@@ -14,6 +14,7 @@ import {
   type ClientToHostMessage,
   type HostRecord,
   type HostState,
+  type McpClientInfo,
 } from '../protocol/socket.js';
 import type { ToolResult } from '../protocol/tools.js';
 
@@ -25,6 +26,8 @@ export interface ToolCallOutcome {
 export interface ConnectOptions {
   readonly clientName?: string;
   readonly clientVersion: string;
+  /** The MCP client this process serves, if known yet (see `setMcpClient`). */
+  readonly mcpClient?: McpClientInfo;
   readonly timeoutMs?: number;
 }
 
@@ -42,6 +45,9 @@ export class HostConnection extends EventEmitter {
   private seq = 0;
   private ended = false;
   private currentState: HostState;
+  private mcpClient: McpClientInfo | undefined;
+  /** The user disconnected this client in the extension; don't reconnect to this host. */
+  disconnectedByUser = false;
 
   private constructor(
     readonly record: HostRecord,
@@ -110,6 +116,7 @@ export class HostConnection extends EventEmitter {
               channel,
               message.state,
             );
+            connection.mcpClient = options.mcpClient;
             resolve(connection);
           },
           onError: (error) => {
@@ -139,6 +146,7 @@ export class HostConnection extends EventEmitter {
             name: options.clientName ?? '@browsersweet/mcp',
             version: options.clientVersion,
           },
+          ...(options.mcpClient ? { mcpClient: options.mcpClient } : {}),
         };
         channel.send(hello);
       });
@@ -187,6 +195,22 @@ export class HostConnection extends EventEmitter {
     });
   }
 
+  /** Tell the host which MCP client this is (for the extension's status). Sent on change only. */
+  setMcpClient(info: McpClientInfo): void {
+    if (this.ended) return;
+    if (
+      this.mcpClient?.name === info.name &&
+      this.mcpClient.version === info.version
+    ) {
+      return;
+    }
+    this.mcpClient = info;
+    this.channel.send({
+      type: 'client.info',
+      mcpClient: info,
+    } satisfies ClientToHostMessage);
+  }
+
   close(): void {
     this.shutdown();
   }
@@ -217,6 +241,12 @@ export class HostConnection extends EventEmitter {
         return;
       case 'ping':
         this.channel.send({ type: 'pong', id: message.id });
+        return;
+      case 'error':
+        // The host closes the socket right after this notice.
+        if (message.error.code === 'disconnected') {
+          this.disconnectedByUser = true;
+        }
         return;
       default:
         return;

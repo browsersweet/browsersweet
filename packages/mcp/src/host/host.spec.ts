@@ -17,6 +17,11 @@ import {
   FrameDecoder,
   parseJsonFrame,
 } from '../native/framing.js';
+import { encodeForWire } from '../protocol/chunking.js';
+import type {
+  HostStatusMessage,
+  HostToExtensionMessage,
+} from '../protocol/native.js';
 import { HostRecord } from '../protocol/socket.js';
 import {
   FakeExtension,
@@ -119,7 +124,7 @@ describe('BridgeHost', () => {
     expect(outcome.result?.data).toEqual({
       spaces: [{ id: 's1', name: 'Work', keptCount: 1, tabCount: 2 }],
     });
-    expect(outcome.result?.content?.[0]?.text).toBe('{"q":1}');
+    expect(outcome.result?.content?.[0]).toMatchObject({ text: '{"q":1}' });
     const unknown = await client.call('nope', {});
     expect(unknown.error?.code).toBe('unknown_tool');
   });
@@ -137,7 +142,7 @@ describe('BridgeHost', () => {
     const client = await connectClient(record);
     const blob = 'x'.repeat(200_000);
     const outcome = await client.call('get_page_text', { blob });
-    expect(outcome.result?.content?.[0]?.text).toBe(text);
+    expect(outcome.result?.content?.[0]).toMatchObject({ text });
     expect(outcome.result?.data).toEqual({ echoed: 200_000 });
     for (const frame of extension.rawFrames) {
       expect(Buffer.byteLength(JSON.stringify(frame))).toBeLessThan(
@@ -178,6 +183,106 @@ describe('BridgeHost', () => {
         (m) => m.type === 'host.status' && m.clients === 0,
       ),
     );
+  });
+
+  it('names connected clients in host.status, keeping the count', async () => {
+    const { record, extension } = await startHost();
+    const status = (n: number) => (m: HostToExtensionMessage) =>
+      m.type === 'host.status' && m.clients === n;
+    const early = await HostConnection.connect(record, {
+      clientVersion: '0.1.0',
+    });
+    cleanups.push(() => early.close());
+    const first = (await extension.waitFor(status(1))) as HostStatusMessage;
+    expect(first.clientList).toEqual([
+      {
+        id: expect.stringMatching(/^[0-9a-f]{12}$/),
+        name: '@browsersweet/mcp',
+        version: '0.1.0',
+        connectedAt: expect.any(Number),
+      },
+    ]);
+    // The MCP initialize arrives after the socket connected.
+    early.setMcpClient({ name: 'claude-code', version: '2.1.0' });
+    await extension.waitFor(
+      (m) =>
+        m.type === 'host.status' && m.clientList?.[0]?.name === 'claude-code',
+    );
+    const second = await HostConnection.connect(record, {
+      clientVersion: '0.1.0',
+      mcpClient: { name: 'cursor', version: '1.0' },
+    });
+    cleanups.push(() => second.close());
+    const both = (await extension.waitFor(status(2))) as HostStatusMessage;
+    expect(both.clientList?.map((c) => [c.name, c.version])).toEqual([
+      ['claude-code', '2.1.0'],
+      ['cursor', '1.0'],
+    ]);
+  });
+
+  it('disconnects one client when the extension asks', async () => {
+    const { record, extension, host } = await startHost();
+    const keep = await connectClient(record);
+    const drop = await HostConnection.connect(record, {
+      clientVersion: 't',
+      mcpClient: { name: 'rogue-agent', version: '1' },
+    });
+    cleanups.push(() => drop.close());
+    await until(() => host.clients.length === 2);
+    const target = host.clients.find((c) => c.name === 'rogue-agent');
+    const closed = new Promise((r) => drop.once('close', r));
+    extension.send({ type: 'clients.disconnect', clientId: target?.id ?? '' });
+    await closed;
+    expect(drop.disconnectedByUser).toBe(true);
+    await extension.waitFor(
+      (m) =>
+        m.type === 'host.status' &&
+        m.clients === 1 &&
+        m.clientList?.[0]?.name !== 'rogue-agent',
+    );
+    expect(keep.closed).toBe(false);
+    // Unknown ids are ignored.
+    extension.send({ type: 'clients.disconnect', clientId: 'nobody' });
+    expect((await keep.call('nope', {})).error?.code).toBe('unknown_tool');
+  });
+
+  it('relays images and chunks them past the 1 MiB cap', async () => {
+    const data = Buffer.alloc(1_000_000, 7).toString('base64');
+    const { record } = await startHost({
+      handlers: {
+        get_page_text: () => ({
+          content: [
+            {
+              type: 'image',
+              mimeType: 'image/png',
+              data,
+              untrusted: true,
+            },
+            { type: 'from.the.future', anything: 1 },
+          ],
+        }),
+      },
+    });
+    const client = await connectClient(record);
+    const outcome = await client.call('get_page_text', {});
+    expect(outcome.result?.content?.[0]).toMatchObject({
+      type: 'image',
+      mimeType: 'image/png',
+      data,
+    });
+    expect(outcome.result?.content?.[1]).toMatchObject({
+      type: 'from.the.future',
+    });
+    // What the extension sent: chunks, each under Chrome's cap.
+    const parts = encodeForWire({
+      type: 'tools.result',
+      id: 'h1',
+      result: { content: [{ type: 'image', mimeType: 'image/png', data }] },
+    });
+    expect(parts.length).toBeGreaterThan(1);
+    for (const part of parts) {
+      expect(Buffer.byteLength(JSON.stringify(part))).toBeLessThan(1024 * 1024);
+    }
   });
 
   it('says nothing to a client without the token, and drops it', async () => {

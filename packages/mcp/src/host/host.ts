@@ -27,8 +27,10 @@ import {
   EVENTS,
   ExtensionToHostMessage,
   type HelloMessage,
+  type ClientSummary,
   type HostToExtensionMessage,
   isChunk,
+  MAX_STATUS_CLIENTS,
   negotiateProtocol,
   parseMessage,
   type ToolsResultMessage,
@@ -38,6 +40,7 @@ import {
   type HostRecord,
   type HostState,
   type HostToClientMessage,
+  type McpClientInfo,
 } from '../protocol/socket.js';
 import { RESERVED_TOOL_NAMES } from '../protocol/tools.js';
 import type { Caller } from './caller.js';
@@ -72,6 +75,17 @@ interface ClientSession {
   readonly channel: JsonChannel;
   authed: boolean;
   helloTimer: NodeJS.Timeout | undefined;
+  /** Set on authentication. */
+  identity?: SessionIdentity;
+}
+
+interface SessionIdentity {
+  readonly id: string;
+  readonly connectedAt: number;
+  /** From `client.hello`. */
+  readonly client: { readonly name: string; readonly version: string };
+  /** From `client.hello.mcpClient` or `client.info`. */
+  mcpClient?: McpClientInfo;
 }
 
 interface PendingCall {
@@ -158,6 +172,33 @@ export class BridgeHost extends EventEmitter {
     return [...this.sessions].filter((s) => s.authed).length;
   }
 
+  /** Authenticated clients, oldest first (what `host.status.clientList` carries). */
+  get clients(): ClientSummary[] {
+    const list: ClientSummary[] = [];
+    for (const session of this.sessions) {
+      const identity = session.identity;
+      if (!session.authed || !identity) continue;
+      const who = identity.mcpClient ?? identity.client;
+      list.push({
+        id: identity.id,
+        name: who.name,
+        version: who.version,
+        connectedAt: identity.connectedAt,
+      });
+    }
+    return list
+      .sort((a, b) => a.connectedAt - b.connectedAt)
+      .slice(0, MAX_STATUS_CLIENTS);
+  }
+
+  private sendStatus(): void {
+    this.sendToExtension({
+      type: 'host.status',
+      clients: this.clientCount,
+      clientList: this.clients,
+    });
+  }
+
   // -------------------------------------------------------------------------------------------
   // Extension side
 
@@ -218,6 +259,9 @@ export class BridgeHost extends EventEmitter {
         return;
       case 'tools.result':
         this.onToolResult(message);
+        return;
+      case 'clients.disconnect':
+        this.disconnectClient(message.clientId);
         return;
       case 'event':
         if (message.event === EVENTS.profileFocused) {
@@ -454,17 +498,37 @@ export class BridgeHost extends EventEmitter {
       clearTimeout(session.helloTimer);
       session.helloTimer = undefined;
       session.authed = true;
+      session.identity = {
+        id: randomBytes(6).toString('hex'),
+        connectedAt: this.now(),
+        client: message.client,
+        ...(message.mcpClient ? { mcpClient: message.mcpClient } : {}),
+      };
       this.sendToSession(session, {
         type: 'host.hello',
         protocolVersion: version,
         state: this.state,
       });
-      this.sendToExtension({ type: 'host.status', clients: this.clientCount });
+      this.sendStatus();
       return;
     }
     switch (message.type) {
       case 'client.hello':
         return;
+      case 'client.info': {
+        const identity = session.identity;
+        if (!identity) return;
+        const current = identity.mcpClient;
+        if (
+          current?.name === message.mcpClient.name &&
+          current.version === message.mcpClient.version
+        ) {
+          return;
+        }
+        identity.mcpClient = message.mcpClient;
+        this.sendStatus();
+        return;
+      }
       case 'ping':
         this.sendToSession(session, { type: 'pong', id: message.id });
         return;
@@ -539,20 +603,51 @@ export class BridgeHost extends EventEmitter {
     }
   }
 
-  private dropSession(session: ClientSession | undefined): void {
+  /** The extension asked to disconnect one client (the user clicked "Disconnect"). */
+  private disconnectClient(clientId: string): void {
+    const session = [...this.sessions].find(
+      (s) => s.authed && s.identity?.id === clientId,
+    );
+    if (!session) {
+      this.log('debug', `clients.disconnect: no client ${clientId}`);
+      return;
+    }
+    const who = session.identity?.mcpClient ?? session.identity?.client;
+    this.log('info', `disconnecting client ${clientId} (${who?.name ?? '?'})`);
+    this.sendToSession(session, {
+      type: 'error',
+      error: {
+        code: 'disconnected',
+        message: 'The user disconnected this client in Browser Sweet.',
+      },
+    });
+    this.dropSession(session, { graceful: true });
+  }
+
+  /**
+   * Forget a client and close its socket. `graceful` flushes what was written (the
+   * `disconnected` notice) before closing; otherwise the socket is destroyed at once.
+   */
+  private dropSession(
+    session: ClientSession | undefined,
+    { graceful = false }: { graceful?: boolean } = {},
+  ): void {
     if (!session || !this.sessions.delete(session)) return;
     clearTimeout(session.helloTimer);
     session.channel.detach();
-    session.socket.destroy();
+    if (graceful) {
+      session.socket.end();
+      setTimeout(() => session.socket.destroy(), 1_000).unref();
+    } else {
+      session.socket.destroy();
+    }
     for (const [id, call] of this.pending) {
       if (call.session !== session) continue;
       clearTimeout(call.timer);
       this.pending.delete(id);
       this.sendToExtension({ type: 'tools.cancel', id });
     }
-    if (session.authed && !this.closing) {
-      this.sendToExtension({ type: 'host.status', clients: this.clientCount });
-    }
+    if (session.authed && !this.closing) this.sendStatus();
   }
 
   // -------------------------------------------------------------------------------------------

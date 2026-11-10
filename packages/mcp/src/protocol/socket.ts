@@ -56,17 +56,37 @@ export type HostRecord = z.infer<typeof HostRecord>;
 
 // Client → host
 
+/** The MCP client behind a socket client: `clientInfo` from its `initialize` request. */
+export const McpClientInfo = z.object({
+  name: z.string().min(1).max(128),
+  version: z.string().max(64),
+});
+export type McpClientInfo = z.infer<typeof McpClientInfo>;
+
 export const ClientHelloMessage = z.object({
   type: z.literal('client.hello'),
   protocolVersion: ProtocolVersion,
   minProtocolVersion: ProtocolVersion.optional(),
   token: z.string().regex(/^[0-9a-f]{64}$/),
+  /** The socket client itself, e.g. `@browsersweet/mcp`. */
   client: z.object({
     name: z.string().max(64),
     version: z.string().max(64),
   }),
+  /** The MCP client it serves, if it already knows (see `client.info`). */
+  mcpClient: McpClientInfo.optional(),
 });
 export type ClientHelloMessage = z.infer<typeof ClientHelloMessage>;
+
+/**
+ * The MCP client's identity, sent when it becomes known after `client.hello` (the MCP
+ * `initialize` request can arrive after the socket connected). Older hosts ignore it.
+ */
+export const ClientInfoMessage = z.object({
+  type: z.literal('client.info'),
+  mcpClient: McpClientInfo,
+});
+export type ClientInfoMessage = z.infer<typeof ClientInfoMessage>;
 
 export const ClientToolsCallMessage = z.object({
   type: z.literal('tools.call'),
@@ -79,6 +99,7 @@ export type ClientToolsCallMessage = z.infer<typeof ClientToolsCallMessage>;
 
 export const ClientToHostMessage = z.discriminatedUnion('type', [
   ClientHelloMessage,
+  ClientInfoMessage,
   ClientToolsCallMessage,
   PingMessage,
   PongMessage,

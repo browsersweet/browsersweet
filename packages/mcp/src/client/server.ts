@@ -9,21 +9,31 @@ import {
 import { defaultPathEnv, runDirCandidates } from '../paths.js';
 import {
   ALWAYS_UNTRUSTED_TOOLS,
+  isImagePart,
+  isTextPart,
   PROFILE_ARGUMENT,
   V1_READ_TOOLS,
   type ToolDescriptor,
   type ToolResult,
 } from '../protocol/tools.js';
+import type { McpClientInfo } from '../protocol/socket.js';
 import { packageVersion } from '../version.js';
 import { DiscoveryPool, type HostHandle, type HostSource } from './pool.js';
 import { describeProfile, orderByFocus, resolveProfile } from './profiles.js';
-import { UNTRUSTED_META_KEY, wrapUntrusted } from './untrusted.js';
+import {
+  UNTRUSTED_META_KEY,
+  untrustedImageNotice,
+  wrapUntrusted,
+} from './untrusted.js';
 
 export const LIST_PROFILES_TOOL = 'list_browser_profiles';
 
 export const NOT_CONNECTED_MESSAGE =
   'Browser Sweet isn\'t connected. In the Browser Sweet extension, open Settings → Labs and turn on "Agent integration" (the browser must be running). ' +
   'If it is on, run `npx @browsersweet/mcp doctor` to check the native messaging setup, or `npx @browsersweet/mcp install --extension-id <id>` if you have not installed it yet.';
+
+export const DISCONNECTED_BY_USER_MESSAGE =
+  'The user disconnected this agent in Browser Sweet. It can connect again after Agent integration reconnects (for example, turn Settings → Labs → Agent integration off and on).';
 
 const INSTRUCTIONS =
   "Read-only access to the user's Browser Sweet workspace (Spaces, Kept, Today tabs, Archive, handoffs) in their browser. " +
@@ -148,8 +158,27 @@ export function renderResult(
     else blocks.push({ type: 'text', text: json });
   }
   for (const part of result.content ?? []) {
-    if (part.untrusted || toolUntrusted) untrustedBlock(part.text, part.source);
-    else blocks.push({ type: 'text', text: part.text });
+    if (isTextPart(part)) {
+      if (part.untrusted || toolUntrusted) {
+        untrustedBlock(part.text, part.source);
+      } else blocks.push({ type: 'text', text: part.text });
+    } else if (isImagePart(part)) {
+      const untrusted = part.untrusted || toolUntrusted;
+      if (untrusted) {
+        blocks.push({
+          type: 'text',
+          text: untrustedImageNotice(part.source),
+          _meta: { [UNTRUSTED_META_KEY]: true },
+        });
+      }
+      blocks.push({
+        type: 'image',
+        data: part.data,
+        mimeType: part.mimeType,
+        ...(untrusted ? { _meta: { [UNTRUSTED_META_KEY]: true } } : {}),
+      });
+    }
+    // Other part types come from a newer extension; skip them.
   }
   if (blocks.length === 0)
     blocks.push({ type: 'text', text: '(empty result)' });
@@ -194,7 +223,11 @@ export function createBridgeServer(
 
     if (name === LIST_PROFILES_TOOL) {
       if (hosts.length === 0) {
-        return { content: [{ type: 'text', text: NOT_CONNECTED_MESSAGE }] };
+        const text =
+          (source.disconnectedByUser?.() ?? 0) > 0
+            ? DISCONNECTED_BY_USER_MESSAGE
+            : NOT_CONNECTED_MESSAGE;
+        return { content: [{ type: 'text', text }] };
       }
       const profiles = orderByFocus(hosts).map((host, index) => ({
         id: host.state.profile.id,
@@ -214,7 +247,13 @@ export function createBridgeServer(
       };
     }
 
-    if (hosts.length === 0) return errorResult(NOT_CONNECTED_MESSAGE);
+    if (hosts.length === 0) {
+      return errorResult(
+        (source.disconnectedByUser?.() ?? 0) > 0
+          ? DISCONNECTED_BY_USER_MESSAGE
+          : NOT_CONNECTED_MESSAGE,
+      );
+    }
     if (requested !== undefined && typeof requested !== 'string') {
       return errorResult('`profile` must be a string.');
     }
@@ -274,6 +313,35 @@ export function notifyOnToolChanges(
   };
 }
 
+/** `clientInfo` from MCP `initialize`, trimmed to the socket protocol's limits. */
+export function mcpClientInfo(
+  info: { name?: unknown; version?: unknown } | undefined,
+): McpClientInfo | undefined {
+  if (!info || typeof info.name !== 'string' || info.name.trim() === '') {
+    return undefined;
+  }
+  return {
+    name: info.name.trim().slice(0, 128),
+    version: typeof info.version === 'string' ? info.version.slice(0, 64) : '',
+  };
+}
+
+/**
+ * Tell the hosts (and so the extension) which MCP client this is, e.g. "claude-code", once the
+ * client has initialized.
+ */
+export function forwardClientInfo(
+  mcp: McpServer,
+  pool: Pick<DiscoveryPool, 'setMcpClient'>,
+): void {
+  const previous = mcp.server.oninitialized;
+  mcp.server.oninitialized = () => {
+    previous?.();
+    const info = mcpClientInfo(mcp.server.getClientVersion());
+    if (info) pool.setMcpClient(info);
+  };
+}
+
 /** Client mode entry: a stdio MCP server. */
 export async function runClient(): Promise<void> {
   const log = (message: string): void => {
@@ -287,6 +355,7 @@ export async function runClient(): Promise<void> {
     log,
   });
   const mcp = createBridgeServer(pool);
+  forwardClientInfo(mcp, pool);
   notifyOnToolChanges(mcp, pool);
   pool.startPolling();
   const transport = new StdioServerTransport();
