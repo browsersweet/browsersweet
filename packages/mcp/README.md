@@ -5,6 +5,8 @@ Let local AI agents (Claude Code, Claude Desktop, Cursor and other MCP clients) 
 It's a small MCP server that talks to the Browser Sweet extension through the browser's native messaging. Everything stays on your computer.
 
 > Agent integration is a **Labs** feature in Browser Sweet and is off by default.
+>
+> `@browsersweet/mcp` is in prerelease. Releases go to the `next` tag: `npx @browsersweet/mcp@next …` always gets the newest one.
 
 ## Install
 
@@ -100,5 +102,7 @@ The tool list comes from the extension, so it follows your extension version. Ev
 ## Development
 
 `nx build browsersweet-mcp`, `nx test browsersweet-mcp` (builds first: the integration test runs the real CLI), `nx lint browsersweet-mcp`, `nx typecheck browsersweet-mcp`.
+
+The package is published from this folder (`package.json` points into `dist/`). `npm pack` runs `scripts/prepack.mjs`, which sets file modes so the tarball doesn't depend on your umask. `src/package.spec.ts` fails if a dependency other than `@modelcontextprotocol/sdk`, `zod` or `tslib` (or any private or locally linked package) appears.
 
 MIT licensed.

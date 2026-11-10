@@ -1,8 +1,32 @@
 {
   "name": "@browsersweet/mcp",
-  "version": "0.0.1",
+  "version": "0.1.0-next.0",
   "description": "Local MCP server for Browser Sweet: lets Claude Code, Claude Desktop and Cursor read your Spaces, Kept, Today, Archive and handoffs through a native messaging bridge.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "browser",
+    "tabs",
+    "native-messaging",
+    "chrome-extension",
+    "claude",
+    "claude-code",
+    "cursor",
+    "ai-agents",
+    "browsersweet"
+  ],
+  "homepage": "https://github.com/browsersweet/browsersweet/tree/main/packages/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/browsersweet/browsersweet/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/browsersweet/browsersweet.git",
+    "directory": "packages/mcp"
+  },
   "license": "MIT",
+  "author": "Commune Software",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -28,28 +52,27 @@
   "files": [
     "dist",
     "!**/*.tsbuildinfo",
-    "PROTOCOL.md"
-  ],
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "browser",
-    "native-messaging",
-    "browsersweet"
+    "!**/*.d.ts.map",
+    "PROTOCOL.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"
+  },
+  "scripts": {
+    "prepack": "node ./scripts/prepack.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "tslib": "^2.3.0",
     "zod": "^4.6.7"
   },
-  "publishConfig": {
-    "access": "public"
-  },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "vitest": "^5.1.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
   }
 }
