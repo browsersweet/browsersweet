@@ -316,7 +316,7 @@
       "sourceVersion": "0.1.0-next.0",
       "templateHash": "sha256:eb5b27dbd859175467aed3fe90d0bc0520e8908c437ddaed5beafed309332bba",
       "installedHash": "sha256:eb5b27dbd859175467aed3fe90d0bc0520e8908c437ddaed5beafed309332bba",
-      "state": "managed",
+      "state": "ejected",
       "ejectable": true
     },
     {

@@ -52,8 +52,7 @@ const FALLBACK_DESCRIPTIONS: Record<(typeof V1_READ_TOOLS)[number], string> = {
     "Get the active tab in the user's last-focused browser window (the browser doesn't need focus).",
   search_archive: 'Search auto-archived tabs by text and date.',
   get_handoffs: 'Read what the user sent to the agent with "Send to agent".',
-  get_page_text:
-    'Read the text of a tab the user granted site access to.',
+  get_page_text: 'Read the text of a tab the user granted site access to.',
 };
 
 export const FALLBACK_TOOLS: ToolDescriptor[] = V1_READ_TOOLS.map((name) => ({

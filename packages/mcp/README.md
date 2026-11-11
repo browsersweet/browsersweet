@@ -106,4 +106,6 @@ The tool list comes from the extension, so it follows your extension version. Ev
 
 The package is published from this folder (`package.json` points into `dist/`). `npm pack` runs `scripts/prepack.mjs`, which sets file modes so the tarball doesn't depend on your umask. `src/package.spec.ts` fails if a dependency other than `@modelcontextprotocol/sdk`, `zod` or `tslib` (or any private or locally linked package) appears.
 
+Releases go out through the "Release @browsersweet/mcp" workflow (`.github/workflows/megamono-release.yml`), started by hand from GitHub Actions. `publish-current` publishes the version already in `package.json`; `bump-and-publish` runs `nx release version`, pushes the commit and `v<version>` tag, then publishes. Both default to a dry run. The workflow file explains the npm setup (trusted publishing, or an `NPM_TOKEN` secret for the first release).
+
 MIT licensed.

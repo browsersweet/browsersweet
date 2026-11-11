@@ -1,45 +1,140 @@
-name: Megamono package prerelease
+name: Release @browsersweet/mcp
+
+# Ejected from Megamono's managed template (release.workflow in .megamono/artifacts.json), which wrote no
+# npm credentials, set no git identity for the version commit and could only bump before publishing.
+#
+# Run it from Actions → "Release @browsersweet/mcp" → Run workflow. Leave "dry_run" on for a rehearsal.
+#   - publish-current: publish the version already in packages/mcp/package.json and tag it v<version>.
+#     Use it for the first release (0.1.0-next.1) and to retry a bump whose publish failed.
+#   - bump-and-publish: `nx release version`, push the commit and v<version> tag, then publish.
+#
+# npm auth, whichever is available:
+#   - Trusted publishing (preferred): on npmjs.com, @browsersweet/mcp → Settings → Trusted publishing →
+#     GitHub Actions, repository browsersweet/browsersweet, workflow megamono-release.yml, environment
+#     npm-next. npm only offers this once the package exists, so the first publish needs a token.
+#   - NPM_TOKEN: a granular npm token with publish rights to @browsersweet/mcp, stored as a secret on
+#     the npm-next environment (or the repository). Delete it once trusted publishing works.
+# Provenance is added automatically when the repository is public; it's skipped while it's private.
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: publish-current, or bump-and-publish
+        required: true
+        default: publish-current
+        type: choice
+        options:
+          - publish-current
+          - bump-and-publish
       specifier:
-        description: Semver keyword or exact version
+        description: 'bump-and-publish only: semver keyword or exact version'
         required: true
         default: prerelease
         type: string
       preid:
-        description: Prerelease identifier
+        description: 'bump-and-publish only: prerelease identifier'
         required: true
         default: next
         type: string
+      dist_tag:
+        description: npm dist-tag
+        required: true
+        default: next
+        type: string
+      dry_run:
+        description: Rehearse without pushing or publishing
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
+  id-token: write
+
+concurrency:
+  group: release-mcp
+  cancel-in-progress: false
+
+env:
+  NX_NO_CLOUD: 'true'
+  NX_DAEMON: 'false'
+  MODE: ${{ inputs.mode }}
+  SPECIFIER: ${{ inputs.specifier }}
+  PREID: ${{ inputs.preid }}
+  DIST_TAG: ${{ inputs.dist_tag }}
+  DRY_RUN: ${{ inputs.dry_run }}
 
 jobs:
-  prerelease:
+  release:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: npm-next
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.24.0
-      - uses: actions/setup-node@v5
+
+      # The pnpm version comes from `packageManager` in package.json.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: pnpm
+
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec nx run-many -t lint test build -p browsersweet-mcp --output-style=static
-      - name: Preview version changes
-        run: pnpm exec nx release version "${{ inputs.specifier }}" --preid "${{ inputs.preid }}" --dry-run
-      - name: Version packages
-        run: pnpm exec nx release version "${{ inputs.specifier }}" --preid "${{ inputs.preid }}" --git-commit --git-tag
-      - name: Publish next prerelease
+
+      - run: pnpm exec nx run-many -t lint typecheck test build -p browsersweet-mcp --output-style=static
+
+      - name: Set the git identity for the release commit and tag
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Version
+        id: version
+        run: |
+          if [ "$MODE" = bump-and-publish ]; then
+            flags=(--git-commit --git-tag)
+            if [ "$DRY_RUN" = true ]; then flags+=(--dry-run); fi
+            pnpm exec nx release version "$SPECIFIER" --preid "$PREID" "${flags[@]}"
+          fi
+          version="$(node -p "require('./packages/mcp/package.json').version")"
+          if [ "$MODE" = bump-and-publish ] && [ "$DRY_RUN" = true ]; then
+            echo "Dry run: the bump above wasn't written, so this run rehearses publishing $version."
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      # Pushed before publishing: if the publish then fails, rerun with publish-current.
+      - name: Push the version commit and tag
+        if: ${{ !inputs.dry_run }}
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm exec nx release publish --tag next
-      - run: git push --follow-tags origin HEAD
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if [ "$MODE" = bump-and-publish ]; then
+            git push --follow-tags origin HEAD
+          elif git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG is already on origin."
+          else
+            git tag --annotate "$TAG" --message "$TAG"
+            git push origin "refs/tags/$TAG"
+          fi
+
+      - name: Use NPM_TOKEN when it's set
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$HOME/.npmrc"
+            echo 'Publishing with NPM_TOKEN.'
+          else
+            echo 'No NPM_TOKEN: publishing through npm trusted publishing.'
+          fi
+
+      - name: Publish
+        run: |
+          flags=(--tag "$DIST_TAG")
+          if [ "$DRY_RUN" = true ]; then flags+=(--dry-run); fi
+          pnpm exec nx release publish "${flags[@]}"
