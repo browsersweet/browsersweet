@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/@browsersweet/mcp?label=%40browsersweet%2Fmcp)](https://www.npmjs.com/package/@browsersweet/mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-The open-source packages behind [Browser Sweet](https://browsersweet.com), the free browser extension from [Commune Software](https://commune.software) that brings Arc's best features (the command palette, Kept and Today tabs, capture, picture-in-picture and Arc import) to Chrome, Edge and Brave.
+The open-source packages behind [Browser Sweet](https://browsersweet.com), the free browser extension from [Commune Software](https://www.commune.software) that brings Arc's best features (the command palette, Kept and Today tabs, capture, picture-in-picture and Arc import) to Chrome, Edge and Brave.
 
 ## Packages
 
@@ -12,7 +12,7 @@ The open-source packages behind [Browser Sweet](https://browsersweet.com), the f
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@browsersweet/mcp`](./packages/mcp/) | A local MCP server that lets Claude Code, Claude Desktop, Cursor and other MCP clients read your Browser Sweet workspace (Spaces, Kept, Today tabs, the Archive and handoffs) through native messaging. Nothing leaves your computer. |
 
-Get started with `@browsersweet/mcp` in [its README](./packages/mcp/README.md).
+Get started with `@browsersweet/mcp` in [the docs](https://browsersweet.com/docs/mcp) or [its README](./packages/mcp/README.md).
 
 ## Contributing
 

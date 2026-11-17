@@ -8,6 +8,8 @@ Let local AI agents (Claude Code, Claude Desktop, Cursor and other MCP clients) 
 
 It's a small MCP server that talks to the Browser Sweet extension through the browser's native messaging. Everything stays on your computer.
 
+**[Read the docs at browsersweet.com/docs/mcp →](https://browsersweet.com/docs/mcp)**
+
 > Agent integration is a **Labs** feature in Browser Sweet and is off by default.
 >
 > `@browsersweet/mcp` is at 0.x: commands and the JavaScript API may still change between minor versions. The extension protocol is versioned separately ([PROTOCOL.md](./PROTOCOL.md)).
@@ -46,7 +48,7 @@ It's a small MCP server that talks to the Browser Sweet extension through the br
      }
      ```
 
-`npx @browsersweet/mcp config` prints these again.
+`npx @browsersweet/mcp config` prints these again. The [installation guide](https://browsersweet.com/docs/mcp/installation) has more on each step.
 
 **Other browser setups.** `--browser chrome-for-testing` targets the Chrome for Testing build that Puppeteer and Playwright download (its own `NativeMessagingHosts` folder; on Windows it reads Chrome's registry key). For a browser started with a custom `--user-data-dir`, or for tests, `--manifest-dir <dir>` writes the manifest into `<dir>` instead of the browsers' folders (add `--browser firefox` for a Firefox manifest). On macOS and Linux, Chromium reads per-user hosts from `<user data dir>/NativeMessagingHosts`; Windows browsers only look in the registry, so there you'd register the written file yourself. `uninstall --manifest-dir <dir>` removes just that manifest and `doctor --manifest-dir <dir>` checks it; both also take `--browser`. Check everything with `npx @browsersweet/mcp doctor`. Remove it all with `npx @browsersweet/mcp uninstall` (then remove the entry from your MCP client).
 
@@ -61,6 +63,8 @@ It's a small MCP server that talks to the Browser Sweet extension through the br
 The bridge folder holds a copy of the host runtime (so it keeps working after the npx cache is cleared), `config.json` (the allowed extension ids, mode 0600) and a launcher script (`browsersweet-bridge` or `.cmd`) that runs it with the absolute path of the Node that ran `install`. If you remove or upgrade that Node, run `install` again.
 
 ## Tools
+
+More in the [tools guide](https://browsersweet.com/docs/mcp/tools).
 
 | Tool                           | What it does                                        |
 | ------------------------------ | --------------------------------------------------- |
@@ -78,6 +82,8 @@ The tool list comes from the extension, so it follows your extension version. Ev
 
 ## Privacy and security
 
+Also on the site: [privacy and security](https://browsersweet.com/docs/mcp/security).
+
 - **Nothing leaves your machine.** No network requests, no accounts, no telemetry. Data goes from the extension to your MCP client over local pipes only.
 - **Read-only in v1.** No tool can open, close, change or click anything. (Proposals the agent makes in later versions need your approval in the side panel.)
 - **Website content is untrusted.** Web pages can contain text written to manipulate AI agents, and that includes tab titles and URLs, not just page text. Every tool result (tabs, kept and archived links, handoffs, page text) is wrapped in a labeled block with a random marker and flagged as untrusted, and the server tells the agent that anything inside those markers is data from websites, never instructions.
@@ -92,6 +98,8 @@ The tool list comes from the extension, so it follows your extension version. Ev
 - **Prompt injection** from page content is mitigated by labeling, not prevented; review what an agent proposes to do with what it read.
 
 ## Troubleshooting
+
+See the [troubleshooting guide](https://browsersweet.com/docs/mcp/troubleshooting) for more.
 
 - `npx @browsersweet/mcp doctor` checks Node, the runtime, the launcher, each browser's manifest and which profiles are connected.
 - Host logs go to the browser's stderr (Chrome: start it with `--enable-logging=stderr`). Set `BROWSERSWEET_MCP_DEBUG=1` for more.
@@ -125,4 +133,4 @@ Please report vulnerabilities privately: see [SECURITY.md](../../SECURITY.md).
 
 ## License
 
-[MIT](./LICENSE) © [Commune Software](https://commune.software)
+[MIT](./LICENSE) © [Commune Software](https://www.commune.software)
