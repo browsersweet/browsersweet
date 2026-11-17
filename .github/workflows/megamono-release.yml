@@ -7,6 +7,9 @@ name: Release @browsersweet/mcp
 #   - publish-current: publish the version already in packages/mcp/package.json and tag it v<version>.
 #     Use it for the first release (0.1.0) and to retry a bump whose publish failed.
 #   - bump-and-publish: `nx release version`, push the commit and v<version> tag, then publish.
+# Before a real release, add the version's "## <version>" entry to packages/mcp/CHANGELOG.md: the run
+# stops without it, and the entry becomes the notes of the v<version> GitHub release. Real releases run
+# from the default branch only; dry runs work from any branch.
 #
 # npm auth, whichever is available:
 #   - Trusted publishing (preferred): on npmjs.com, @browsersweet/mcp → Settings → Trusted publishing →
@@ -71,6 +74,17 @@ jobs:
     timeout-minutes: 20
     environment: npm
     steps:
+      # A real release pushes its version commit and tag to the branch it ran from and publishes that
+      # branch's code, so only the default branch may do one. Dry runs work from any branch.
+      - name: Release only from the default branch
+        if: ${{ !inputs.dry_run && github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+        env:
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          echo "::error::Releases run from ${DEFAULT_BRANCH} only, not ${REF}. Turn dry_run on to rehearse from another branch."
+          exit 1
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -107,6 +121,22 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
+      # The GitHub release's notes are this version's section of packages/mcp/CHANGELOG.md (written by hand
+      # before releasing). A real run stops here, before pushing or publishing anything, if it's missing.
+      - name: Read the changelog entry
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v heading="## ${VERSION}" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' packages/mcp/CHANGELOG.md | sed -e '/./,$!d' > "$RUNNER_TEMP/release-notes.md"
+          if [ ! -s "$RUNNER_TEMP/release-notes.md" ]; then
+            message="packages/mcp/CHANGELOG.md has no \"## ${VERSION}\" entry. Add it, then run the release again."
+            if [ "$DRY_RUN" = true ]; then echo "::warning::$message"; else echo "::error::$message"; exit 1; fi
+          fi
+
       # Pushed before publishing: if the publish then fails, rerun with publish-current.
       - name: Push the version commit and tag
         if: ${{ !inputs.dry_run }}
@@ -138,3 +168,20 @@ jobs:
           flags=(--tag "$DIST_TAG")
           if [ "$DRY_RUN" = true ]; then flags+=(--dry-run); fi
           pnpm exec nx release publish "${flags[@]}"
+
+      # After publishing, so a release page never points at a version npm doesn't have. A rerun with
+      # publish-current leaves an existing release alone.
+      - name: Create the GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "The $TAG release already exists."
+            exit 0
+          fi
+          flags=(--verify-tag --title "@browsersweet/mcp $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md")
+          if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$TAG" "${flags[@]}"
