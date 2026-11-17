@@ -6,7 +6,7 @@ It's a small MCP server that talks to the Browser Sweet extension through the br
 
 > Agent integration is a **Labs** feature in Browser Sweet and is off by default.
 >
-> `@browsersweet/mcp` is in prerelease. Releases go to the `next` tag: `npx @browsersweet/mcp@next …` always gets the newest one.
+> `@browsersweet/mcp` is at 0.x: commands and the JavaScript API may still change between minor versions. The extension protocol is versioned separately ([PROTOCOL.md](./PROTOCOL.md)).
 
 ## Install
 
@@ -105,5 +105,7 @@ The tool list comes from the extension, so it follows your extension version. Ev
 `nx build browsersweet-mcp`, `nx test browsersweet-mcp` (builds first: the integration test runs the real CLI), `nx lint browsersweet-mcp`, `nx typecheck browsersweet-mcp`.
 
 The package is published from this folder (`package.json` points into `dist/`). `npm pack` runs `scripts/prepack.mjs`, which sets file modes so the tarball doesn't depend on your umask. `src/package.spec.ts` fails if a dependency other than `@modelcontextprotocol/sdk`, `zod` or `tslib` (or any private or locally linked package) appears.
+
+Releases go out through the "Release packages" workflow (`.github/workflows/megamono-release.yml`), started by hand from GitHub Actions. Every package under `packages/` is released together on one version and one `v<version>` tag. `publish-current` publishes the version already in the `package.json` files; `bump-and-publish` runs `nx release version` for all of them, pushes the commit and tag, then publishes. Both default to a dry run. Real releases run from the default branch only, and need a `## <version>` entry in the `CHANGELOG.md` of each package that changed: the entries become the notes of the `v<version>` GitHub release. The workflow file explains the npm setup (trusted publishing, or an `NPM_TOKEN` secret for a first release).
 
 MIT licensed.
