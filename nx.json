@@ -33,9 +33,14 @@
   ],
   "analytics": false,
   "release": {
-    "version": {
-      "preVersionCommand": "pnpm exec nx run-many -t build --projects=browsersweet-mcp"
+    "projects": ["packages/*"],
+    "projectsRelationship": "fixed",
+    "releaseTag": {
+      "pattern": "v{version}"
     },
-    "projects": ["browsersweet-mcp"]
+    "version": {
+      "preVersionCommand": "pnpm exec nx run-many -t build --projects='packages/*'",
+      "adjustSemverBumpsForZeroMajorVersion": false
+    }
   }
 }

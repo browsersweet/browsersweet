@@ -1,22 +1,27 @@
-name: Release @browsersweet/mcp
+name: Release packages
 
 # Ejected from Megamono's managed template (release.workflow in .megamono/artifacts.json), which wrote no
 # npm credentials, set no git identity for the version commit and could only bump before publishing.
 #
-# Run it from Actions → "Release @browsersweet/mcp" → Run workflow. Leave "dry_run" on for a rehearsal.
-#   - publish-current: publish the version already in packages/mcp/package.json and tag it v<version>.
-#     Use it for the first release (0.1.0) and to retry a bump whose publish failed.
-#   - bump-and-publish: `nx release version`, push the commit and v<version> tag, then publish.
-# Before a real release, add the version's "## <version>" entry to packages/mcp/CHANGELOG.md: the run
-# stops without it, and the entry becomes the notes of the v<version> GitHub release. Real releases run
-# from the default branch only; dry runs work from any branch.
+# Every package under packages/ (nx.json `release.projects`) is released together on one version
+# (`projectsRelationship: fixed`): one v<version> tag, one GitHub release, every public package published.
+# Private packages are versioned with the rest but never published. A new package needs no change here.
+#
+# Run it from Actions → "Release packages" → Run workflow. Leave "dry_run" on for a rehearsal.
+#   - publish-current: publish the version already in the packages' package.json files and tag it
+#     v<version>. Use it for the first release (0.1.0) and to retry a bump whose publish failed.
+#   - bump-and-publish: `nx release version` (every package), push the commit and tag, then publish.
+# Before a real release, add a "## <version>" entry to the CHANGELOG.md of each package that changed: the
+# run stops if none has one, and the entries (under each package's name; "No changes" for the rest)
+# become the notes of the v<version> GitHub release. Real releases run from the default branch only; dry
+# runs work from any branch. Helpers: .github/scripts/release-packages.mjs.
 #
 # npm auth, whichever is available:
-#   - Trusted publishing (preferred): on npmjs.com, @browsersweet/mcp → Settings → Trusted publishing →
+#   - Trusted publishing (preferred): on npmjs.com, for each package → Settings → Trusted publishing →
 #     GitHub Actions, repository browsersweet/browsersweet, workflow megamono-release.yml, environment
-#     npm. npm only offers this once the package exists, so the first publish needs a token.
-#   - NPM_TOKEN: a granular npm token with publish rights to @browsersweet/mcp, stored as a secret on
-#     the npm environment (or the repository). Delete it once trusted publishing works.
+#     npm. npm only offers this once a package exists, so a package's first publish needs a token.
+#   - NPM_TOKEN: a granular npm token with publish rights to the @browsersweet scope, stored as a secret
+#     on the npm environment (or the repository). Delete it once trusted publishing works for every package.
 # Provenance is added automatically when the repository is public; it's skipped while it's private.
 
 on:
@@ -56,7 +61,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: release-mcp
+  group: release
   cancel-in-progress: false
 
 env:
@@ -71,7 +76,7 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     environment: npm
     steps:
       # A real release pushes its version commit and tag to the branch it ran from and publishes that
@@ -99,7 +104,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm exec nx run-many -t lint typecheck test build -p browsersweet-mcp --output-style=static
+      - run: pnpm exec nx run-many -t lint typecheck test build --projects='packages/*' --output-style=static
 
       - name: Set the git identity for the release commit and tag
         run: |
@@ -114,27 +119,26 @@ jobs:
             if [ "$DRY_RUN" = true ]; then flags+=(--dry-run); fi
             pnpm exec nx release version "$SPECIFIER" --preid "$PREID" "${flags[@]}"
           fi
-          version="$(node -p "require('./packages/mcp/package.json').version")"
+          version="$(node .github/scripts/release-packages.mjs version)"
           if [ "$MODE" = bump-and-publish ] && [ "$DRY_RUN" = true ]; then
             echo "Dry run: the bump above wasn't written, so this run rehearses publishing $version."
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
-      # The GitHub release's notes are this version's section of packages/mcp/CHANGELOG.md (written by hand
-      # before releasing). A real run stops here, before pushing or publishing anything, if it's missing.
-      - name: Read the changelog entry
+      # A real run stops here, before pushing or publishing anything, when no package changelog has an
+      # entry for this version.
+      - name: Collect the release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          awk -v heading="## ${VERSION}" '
-            $0 == heading { found = 1; next }
-            found && /^## / { exit }
-            found { print }
-          ' packages/mcp/CHANGELOG.md | sed -e '/./,$!d' > "$RUNNER_TEMP/release-notes.md"
-          if [ ! -s "$RUNNER_TEMP/release-notes.md" ]; then
-            message="packages/mcp/CHANGELOG.md has no \"## ${VERSION}\" entry. Add it, then run the release again."
+          status=0
+          node .github/scripts/release-packages.mjs notes "$VERSION" "$RUNNER_TEMP/release-notes.md" || status=$?
+          if [ "$status" = 2 ]; then
+            message="No package CHANGELOG.md has a \"## ${VERSION}\" entry. Add one for each package that changed, then run the release again."
             if [ "$DRY_RUN" = true ]; then echo "::warning::$message"; else echo "::error::$message"; exit 1; fi
+          elif [ "$status" != 0 ]; then
+            exit "$status"
           fi
 
       # Pushed before publishing: if the publish then fails, rerun with publish-current.
@@ -163,6 +167,8 @@ jobs:
             echo 'No NPM_TOKEN: publishing through npm trusted publishing.'
           fi
 
+      # Publishes every release package; ones already on npm at this version are skipped, so a rerun only
+      # publishes what's missing.
       - name: Publish
         run: |
           flags=(--tag "$DIST_TAG")
@@ -182,6 +188,6 @@ jobs:
             echo "The $TAG release already exists."
             exit 0
           fi
-          flags=(--verify-tag --title "@browsersweet/mcp $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md")
+          flags=(--verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md")
           if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
           gh release create "$TAG" "${flags[@]}"
