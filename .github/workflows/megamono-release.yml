@@ -5,15 +5,15 @@ name: Release @browsersweet/mcp
 #
 # Run it from Actions → "Release @browsersweet/mcp" → Run workflow. Leave "dry_run" on for a rehearsal.
 #   - publish-current: publish the version already in packages/mcp/package.json and tag it v<version>.
-#     Use it for the first release (0.1.0-next.1) and to retry a bump whose publish failed.
+#     Use it for the first release (0.1.0) and to retry a bump whose publish failed.
 #   - bump-and-publish: `nx release version`, push the commit and v<version> tag, then publish.
 #
 # npm auth, whichever is available:
 #   - Trusted publishing (preferred): on npmjs.com, @browsersweet/mcp → Settings → Trusted publishing →
 #     GitHub Actions, repository browsersweet/browsersweet, workflow megamono-release.yml, environment
-#     npm-next. npm only offers this once the package exists, so the first publish needs a token.
+#     npm. npm only offers this once the package exists, so the first publish needs a token.
 #   - NPM_TOKEN: a granular npm token with publish rights to @browsersweet/mcp, stored as a secret on
-#     the npm-next environment (or the repository). Delete it once trusted publishing works.
+#     the npm environment (or the repository). Delete it once trusted publishing works.
 # Provenance is added automatically when the repository is public; it's skipped while it's private.
 
 on:
@@ -28,19 +28,19 @@ on:
           - publish-current
           - bump-and-publish
       specifier:
-        description: 'bump-and-publish only: semver keyword or exact version'
+        description: 'bump-and-publish only: semver keyword (patch, minor, prerelease…) or exact version'
         required: true
-        default: prerelease
+        default: patch
         type: string
       preid:
-        description: 'bump-and-publish only: prerelease identifier'
+        description: 'bump-and-publish only: prerelease identifier, used with pre* keywords'
         required: true
         default: next
         type: string
       dist_tag:
-        description: npm dist-tag
+        description: npm dist-tag (latest; next for a prerelease)
         required: true
-        default: next
+        default: latest
         type: string
       dry_run:
         description: Rehearse without pushing or publishing
@@ -69,7 +69,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: npm-next
+    environment: npm
     steps:
       - uses: actions/checkout@v7
         with:

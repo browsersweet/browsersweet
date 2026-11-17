@@ -6,7 +6,7 @@ It's a small MCP server that talks to the Browser Sweet extension through the br
 
 > Agent integration is a **Labs** feature in Browser Sweet and is off by default.
 >
-> `@browsersweet/mcp` is in prerelease. Releases go to the `next` tag: `npx @browsersweet/mcp@next …` always gets the newest one.
+> `@browsersweet/mcp` is at 0.x: commands and the JavaScript API may still change between minor versions. The extension protocol is versioned separately ([PROTOCOL.md](./PROTOCOL.md)).
 
 ## Install
 

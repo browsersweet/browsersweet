@@ -1,6 +1,6 @@
 {
   "name": "@browsersweet/mcp",
-  "version": "0.1.0-next.1",
+  "version": "0.1.0",
   "description": "Local MCP server for Browser Sweet: lets Claude Code, Claude Desktop and Cursor read your Spaces, Kept, Today, Archive and handoffs through a native messaging bridge.",
   "keywords": [
     "mcp",
@@ -72,7 +72,6 @@
     "vitest": "^5.1.0"
   },
   "publishConfig": {
-    "access": "public",
-    "tag": "next"
+    "access": "public"
   }
 }

@@ -180,6 +180,5 @@ Times are epoch milliseconds. Titles, names and URLs in these results are writte
 
 ## 6. Compatibility notes
 
-- **0.1.0** (protocol 1, additive): `host.status.clientList` and `clients.disconnect`; `client.hello.mcpClient` and `client.info` on the socket; the `disconnected` error code; `ImagePart` and skipping unknown content part types; `get_active_tab` uses the last-focused normal window instead of requiring focus.
-- **0.1.0-next.1** (no wire change): clients check ownership of discovery directories, records and sockets (§4, Trust) and fence every tool's output as untrusted (§2, `untrustedOutput`).
+- **0.1.0** (protocol 1, additive): `host.status.clientList` and `clients.disconnect`; `client.hello.mcpClient` and `client.info` on the socket; the `disconnected` error code; `ImagePart` and skipping unknown content part types; `get_active_tab` uses the last-focused normal window instead of requiring focus. With no wire change, clients also check ownership of discovery directories, records and sockets (§4, Trust) and fence every tool's output as untrusted (§2, `untrustedOutput`).
 - Each addition is optional and ignored by older peers, so `PROTOCOL_VERSION` stays 1. The exception to watch is `ImagePart` toward a pre-0.1.0 host (see §2, Calls).
