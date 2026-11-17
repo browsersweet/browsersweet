@@ -1,5 +1,9 @@
 # @browsersweet/mcp
 
+[![npm](https://img.shields.io/npm/v/@browsersweet/mcp)](https://www.npmjs.com/package/@browsersweet/mcp)
+[![CI](https://github.com/browsersweet/browsersweet/actions/workflows/ci.yml/badge.svg)](https://github.com/browsersweet/browsersweet/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Let local AI agents (Claude Code, Claude Desktop, Cursor and other MCP clients) read your [Browser Sweet](https://browsersweet.com) workspace: Spaces, Kept, Today tabs, the Archive and what you hand off with **Send to agent**.
 
 It's a small MCP server that talks to the Browser Sweet extension through the browser's native messaging. Everything stays on your computer.
@@ -7,6 +11,13 @@ It's a small MCP server that talks to the Browser Sweet extension through the br
 > Agent integration is a **Labs** feature in Browser Sweet and is off by default.
 >
 > `@browsersweet/mcp` is at 0.x: commands and the JavaScript API may still change between minor versions. The extension protocol is versioned separately ([PROTOCOL.md](./PROTOCOL.md)).
+
+## Requirements
+
+- [Browser Sweet](https://browsersweet.com) in Chrome, Edge, Brave, Vivaldi, Arc, Chromium or Firefox, with **Labs → Agent integration** turned on
+- Node.js 22 or newer
+- macOS, Linux or Windows
+- An MCP client: Claude Code, Claude Desktop, Cursor, or any client that runs stdio servers
 
 ## Install
 
@@ -102,10 +113,16 @@ The tool list comes from the extension, so it follows your extension version. Ev
 
 ## Development
 
-`nx build browsersweet-mcp`, `nx test browsersweet-mcp` (builds first: the integration test runs the real CLI), `nx lint browsersweet-mcp`, `nx typecheck browsersweet-mcp`.
+This package lives in the [browsersweet/browsersweet](https://github.com/browsersweet/browsersweet) workspace; [CONTRIBUTING.md](../../CONTRIBUTING.md) covers setup, the checks CI runs and releases. For this package: `nx build browsersweet-mcp`, `nx test browsersweet-mcp` (builds first: the integration test runs the real CLI), `nx lint browsersweet-mcp`, `nx typecheck browsersweet-mcp`.
 
 The package is published from this folder (`package.json` points into `dist/`). `npm pack` runs `scripts/prepack.mjs`, which sets file modes so the tarball doesn't depend on your umask. `src/package.spec.ts` fails if a dependency other than `@modelcontextprotocol/sdk`, `zod` or `tslib` (or any private or locally linked package) appears.
 
-Releases go out through the "Release packages" workflow (`.github/workflows/megamono-release.yml`), started by hand from GitHub Actions. Every package under `packages/` is released together on one version and one `v<version>` tag. `publish-current` publishes the version already in the `package.json` files; `bump-and-publish` runs `nx release version` for all of them, pushes the commit and tag, then publishes. Both default to a dry run. Real releases run from the default branch only, and need a `## <version>` entry in the `CHANGELOG.md` of each package that changed: the entries become the notes of the `v<version>` GitHub release. The workflow file explains the npm setup (trusted publishing, or an `NPM_TOKEN` secret for a first release).
+`scripts/smoke-tarball.mjs` installs a packed tarball into an empty project and starts it as an MCP server; CI runs it on Node 22, 24 and 26. Releases go out with the other packages in this repository through the **Release packages** workflow (see [CONTRIBUTING.md](../../CONTRIBUTING.md#releases)).
 
-MIT licensed.
+## Security
+
+Please report vulnerabilities privately: see [SECURITY.md](../../SECURITY.md).
+
+## License
+
+[MIT](./LICENSE) © [Commune Software](https://commune.software)

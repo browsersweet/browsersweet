@@ -26,7 +26,10 @@
     "directory": "packages/mcp"
   },
   "license": "MIT",
-  "author": "Commune Software",
+  "author": {
+    "name": "Commune Software",
+    "url": "https://commune.software"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -57,7 +60,7 @@
     "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "prepack": "node ./scripts/prepack.mjs"

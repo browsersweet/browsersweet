@@ -108,11 +108,14 @@ export function checkInstall(
   const p = pathFor(ctx.platform);
   const layout = installLayout(ctx);
 
+  // engines says >=22 (the oldest Node line still supported upstream). 20 still runs everything, so it
+  // only warns; anything older fails.
   const major = Number(process.versions.node.split('.')[0]);
-  add(
-    major >= 20 ? 'ok' : 'fail',
-    `Node ${process.versions.node} at ${ctx.nodePath}${major >= 20 ? '' : ' (needs 20+)'}`,
-  );
+  const node = `Node ${process.versions.node} at ${ctx.nodePath}`;
+  if (major >= 22) add('ok', node);
+  else if (major === 20)
+    add('warn', `${node} (end of life; Browser Sweet supports 22+)`);
+  else add('fail', `${node} (needs 22+)`);
 
   if (ctx.exists(layout.cliPath))
     add('ok', `host runtime at ${layout.runtimeDir}`);
