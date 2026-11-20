@@ -31,7 +31,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -42,3 +42,38 @@ jobs:
       - run: pnpm exec nx run megamono:check --output-style=static
 
       - run: pnpm exec nx run-many -t lint typecheck test build --output-style=static
+
+  # The published @browsersweet/mcp on every Node it supports (`engines`: >=22): built and packed with the
+  # workspace's Node, then installed into an empty project and started as an MCP server on each version.
+  package:
+    name: Packed @browsersweet/mcp on Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24', '26']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec nx run browsersweet-mcp:build --output-style=static
+
+      - name: Pack
+        working-directory: packages/mcp
+        run: pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install the tarball and start the MCP server
+        run: node packages/mcp/scripts/smoke-tarball.mjs "$RUNNER_TEMP"/pack/*.tgz

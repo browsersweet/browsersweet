@@ -1,6 +1,15 @@
 {
   "name": "@browsersweet/source",
   "version": "0.0.0",
+  "description": "Browser Sweet's open-source packages: @browsersweet/mcp, the local MCP bridge between AI agents and the Browser Sweet extension.",
+  "homepage": "https://github.com/browsersweet/browsersweet#readme",
+  "bugs": {
+    "url": "https://github.com/browsersweet/browsersweet/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/browsersweet/browsersweet.git"
+  },
   "license": "MIT",
   "scripts": {
     "megamono:yalc-publish": "node .megamono/publish-yalc.mjs"

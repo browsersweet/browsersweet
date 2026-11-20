@@ -1,22 +1,36 @@
 {
   "name": "@browsersweet/mcp",
   "version": "0.1.0",
-  "description": "Local MCP server for Browser Sweet: lets Claude Code, Claude Desktop and Cursor read your Spaces, Kept, Today, Archive and handoffs through a native messaging bridge.",
+  "description": "Local MCP server that gives Claude Code, Claude Desktop, Cursor and other AI agents read-only access to your browser tabs, Spaces, kept links, Archive and handoffs in Browser Sweet, over native messaging.",
   "keywords": [
     "mcp",
-    "model-context-protocol",
     "mcp-server",
+    "model-context-protocol",
     "browser",
+    "browser-tabs",
     "tabs",
-    "native-messaging",
+    "tab-manager",
+    "spaces",
+    "arc",
+    "arc-browser",
+    "browser-extension",
     "chrome-extension",
+    "native-messaging",
+    "chrome",
+    "edge",
+    "brave",
+    "firefox",
     "claude",
     "claude-code",
+    "claude-desktop",
     "cursor",
+    "ai",
     "ai-agents",
-    "browsersweet"
+    "llm",
+    "browsersweet",
+    "browser-sweet"
   ],
-  "homepage": "https://github.com/browsersweet/browsersweet/tree/main/packages/mcp#readme",
+  "homepage": "https://browsersweet.com/docs/mcp",
   "bugs": {
     "url": "https://github.com/browsersweet/browsersweet/issues"
   },
@@ -26,7 +40,10 @@
     "directory": "packages/mcp"
   },
   "license": "MIT",
-  "author": "Commune Software",
+  "author": {
+    "name": "Commune Software",
+    "url": "https://www.commune.software"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -57,7 +74,7 @@
     "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "prepack": "node ./scripts/prepack.mjs"
