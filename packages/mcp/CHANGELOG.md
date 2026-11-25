@@ -7,6 +7,7 @@ All notable changes to `@browsersweet/mcp`. The wire protocol is versioned separ
 First release on npm (`npm install @browsersweet/mcp`). The 0.1.0-next prereleases were never published; their changes are all here.
 
 - **MCP server** (`browsersweet-mcp`, the default mode): a stdio MCP server for Claude Code, Claude Desktop, Cursor and other clients. Tools come from the Browser Sweet extension (`list_spaces`, `get_kept_tree`, `list_tabs`, `get_active_tab`, `search_archive`, `get_handoffs`, `get_page_text`) plus `list_browser_profiles`; every tool takes an optional `profile`. Every tool's output comes back fenced and labeled as untrusted web content (see Security).
+- **Requires Node.js 22 or newer.** Node 20 still runs it, but it's past end of life; `doctor` warns on it.
 - **Native messaging host** (`host`): started by the browser for the Browser Sweet extension only, relays over a per-user Unix socket or named pipe gated by a random token. No TCP port, no network access.
 - **Setup:** `install` (Chrome, Chrome for Testing, Chromium, Edge, Brave, Vivaldi, Arc, Firefox on macOS, Linux and Windows; `--browser`, `--manifest-dir <dir>`, `--dry-run`), `uninstall`, `doctor`, `config` and `extension-id`.
 - **Protocol 1** (`@browsersweet/mcp/protocol`): zod schemas for every message, chunking past Chrome's 1 MiB native message cap, and:
